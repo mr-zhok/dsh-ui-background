@@ -1,8 +1,8 @@
 {
   "name": "@zhang/dsh-ui-background",
-  "version": "1.9.0",
+  "version": "1.11.0",
   "private": true,
-  "description": "DSH 界面背景：最多 10 张图库（可拖拽排序）、320px 缩略图、壁纸/浮层、暗化遮罩、轮换背景，以及可换绑的去除背景快捷键。",
+  "description": "DSH 界面背景：最多 10 张图库（可拖拽排序）、320px 缩略图、删除二次确认与撤销、壁纸/浮层、暗化遮罩、轮换背景，以及可换绑的去除背景快捷键。",
   "license": "MIT",
   "repository": {
     "type": "git",

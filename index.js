@@ -582,6 +582,11 @@ export function apply(ctx) {
         sendJson(response, 415, { error: 'unsupported image type' })
         return
       }
+      // Undo-restore uploads pass `?select=0`: add the image without touching
+      // `currentId`, so restoring a non-current image never switches the
+      // background (the client decides whether it should become current).
+      const selectParam = String(url.searchParams.get('select') || '').toLowerCase()
+      const select = selectParam !== '0' && selectParam !== 'false'
       const bytes = await readBody(request, MAX_IMAGE_BYTES)
       if (bytes.length === 0) {
         sendJson(response, 400, { error: 'empty image' })
@@ -597,9 +602,11 @@ export function apply(ctx) {
 
         if (existing) {
           // Same bytes are already in the library: select, never duplicate.
-          state.currentId = existing.id
-          state.updatedAt = Date.now()
-          writeState(state)
+          if (select) {
+            state.currentId = existing.id
+            state.updatedAt = Date.now()
+            writeState(state)
+          }
           sendJson(response, 200, stateView(state, items, { duplicate: true }))
           return
         }
@@ -625,10 +632,12 @@ export function apply(ctx) {
           name: imageName(request.headers['x-image-name']),
         }
         const nextItems = items.concat(item)
-        state.currentId = id
-        state.updatedAt = Date.now()
         writeIndex(nextItems)
-        writeState(state)
+        if (select) {
+          state.currentId = id
+          state.updatedAt = Date.now()
+          writeState(state)
+        }
         log('info', `added background image ${id.slice(0, 12)}… (${mime}, ${bytes.length} bytes)`)
         sendJson(response, 200, stateView(state, nextItems))
       })

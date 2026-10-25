@@ -19,6 +19,7 @@ window.__ModuleLoader__.load({
     const NS = 'ui-background'
     const MAX_BYTES = 12 * 1024 * 1024
     const MAX_ITEMS = 10
+    const UNDO_MS = 10 * 1000
     const ACCEPT = 'image/png,image/jpeg,image/webp,image/gif'
     const ALLOWED = new Set(['image/png', 'image/jpeg', 'image/webp', 'image/gif'])
 
@@ -35,6 +36,17 @@ window.__ModuleLoader__.load({
       refreshOverflow: '超出 10 张上限，未纳入 {overflow} 张。',
       refreshFailed: '刷新失败，请重试。',
       remove: '删除',
+      deleteTitle: '删除这张图片？',
+      deleteBody: '删除后 10 秒内可以撤销；撤销会恢复图片和它在图库中的位置。',
+      deleteCurrentWarn: '这是当前背景，删除后会自动切换到其他图片。',
+      deleteCancel: '取消',
+      deleteConfirm: '删除',
+      deleteUndoToast: '已删除「{name}」',
+      deleteUndoAction: '撤销',
+      deleteUndoFailed: '撤销失败，请重新添加图片。',
+      deleteUndoLimit: '撤销失败：图库已满 10 张。',
+      deleteNoUndo: '已删除「{name}」（原图过大或读取失败，无法撤销）。',
+      unnamed: '未命名图片',
       galleryHint: '点击缩略图切换背景，右上角 × 删除；最多 10 张。',
       limitReached: '最多保存 10 张图片，请先删除一张。',
       uploadDuplicate: '这张图已在库里，已切换。',
@@ -87,6 +99,17 @@ window.__ModuleLoader__.load({
       refreshOverflow: '{overflow} image(s) beyond the 10-image limit were left out.',
       refreshFailed: 'Refresh failed. Please try again.',
       remove: 'Delete',
+      deleteTitle: 'Delete this image?',
+      deleteBody: 'You can undo for 10 seconds; undo restores the image and its place in the gallery.',
+      deleteCurrentWarn: 'This is the current background; another image will be selected after deleting it.',
+      deleteCancel: 'Cancel',
+      deleteConfirm: 'Delete',
+      deleteUndoToast: 'Deleted “{name}”',
+      deleteUndoAction: 'Undo',
+      deleteUndoFailed: 'Undo failed. Please add the image again.',
+      deleteUndoLimit: 'Undo failed: the gallery is full (10 images).',
+      deleteNoUndo: 'Deleted “{name}” (the original could not be kept for undo).',
+      unnamed: 'Untitled image',
       galleryHint: 'Click a thumbnail to switch, × to delete; up to 10 images.',
       limitReached: 'Up to 10 images. Remove one first.',
       uploadDuplicate: 'That image is already in the library and is now selected.',
@@ -233,6 +256,126 @@ window.__ModuleLoader__.load({
         color: 'var(--dsw-alias-label-secondary)',
       },
       galleryFoot: { width: '100%', display: 'flex', flexDirection: 'column', gap: 6 },
+      backdrop: {
+        position: 'fixed',
+        inset: 0,
+        zIndex: 1000,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: 24,
+        background: 'rgba(8, 8, 10, 0.45)',
+        backdropFilter: 'blur(6px)',
+        WebkitBackdropFilter: 'blur(6px)',
+        animation: 'ui-bg-fade-in 140ms ease-out',
+      },
+      dialog: {
+        boxSizing: 'border-box',
+        width: 424,
+        maxWidth: '100%',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 16,
+        padding: 22,
+        borderRadius: 16,
+        border: '1px solid var(--dsw-alias-border-l1)',
+        background: 'var(--dsw-alias-bg-overlay, var(--dsw-alias-bg-layer-1))',
+        boxShadow: '0 24px 64px rgba(0, 0, 0, 0.38), 0 2px 10px rgba(0, 0, 0, 0.18)',
+        animation: 'ui-bg-pop-in 170ms cubic-bezier(0.2, 0.9, 0.3, 1.15)',
+      },
+      dialogTitle: { margin: 0, fontSize: 16, fontWeight: 600, lineHeight: '24px' },
+      dialogBody: { display: 'flex', alignItems: 'center', gap: 12 },
+      dialogThumb: {
+        flex: '0 0 auto',
+        width: 56,
+        height: 56,
+        borderRadius: 10,
+        border: '1px solid var(--dsw-alias-border-l1)',
+        backgroundSize: 'cover',
+        backgroundPosition: 'center',
+        backgroundRepeat: 'no-repeat',
+        backgroundColor: 'var(--dsw-alias-bg-layer-2)',
+      },
+      dialogInfo: { display: 'flex', flexDirection: 'column', gap: 3, minWidth: 0 },
+      dialogName: {
+        fontSize: 13,
+        fontWeight: 500,
+        lineHeight: '19px',
+        overflow: 'hidden',
+        textOverflow: 'ellipsis',
+        whiteSpace: 'nowrap',
+      },
+      dialogMeta: { fontSize: 12, lineHeight: '18px', color: 'var(--dsw-alias-label-secondary)' },
+      dialogWarn: {
+        margin: 0,
+        boxSizing: 'border-box',
+        padding: '9px 12px',
+        borderRadius: 9,
+        background: 'var(--dsw-alias-bg-layer-2)',
+        color: 'var(--dsw-alias-label-secondary)',
+        fontSize: 12,
+        lineHeight: '18px',
+      },
+      dialogFooter: { display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 2 },
+      dangerButton: {
+        height: 32,
+        padding: '0 16px',
+        border: 'none',
+        borderRadius: 8,
+        cursor: 'pointer',
+        background: 'var(--dsw-alias-state-error-primary, #d9534f)',
+        color: '#fff',
+        fontSize: 13,
+        fontWeight: 500,
+      },
+      toast: {
+        position: 'fixed',
+        left: '50%',
+        bottom: 28,
+        zIndex: 1000,
+        transform: 'translateX(-50%)',
+        display: 'flex',
+        alignItems: 'center',
+        gap: 14,
+        maxWidth: 'calc(100vw - 48px)',
+        padding: '10px 8px 10px 16px',
+        overflow: 'hidden',
+        borderRadius: 12,
+        border: '1px solid var(--dsw-alias-border-l1)',
+        background: 'var(--dsw-alias-bg-overlay, var(--dsw-alias-bg-layer-1))',
+        boxShadow: '0 16px 40px rgba(0, 0, 0, 0.3)',
+        animation: 'ui-bg-toast-in 200ms cubic-bezier(0.2, 0.9, 0.3, 1.1)',
+      },
+      toastText: {
+        fontSize: 13,
+        lineHeight: '20px',
+        color: 'var(--dsw-alias-label-primary)',
+        overflow: 'hidden',
+        textOverflow: 'ellipsis',
+        whiteSpace: 'nowrap',
+      },
+      toastAction: {
+        flex: '0 0 auto',
+        height: 28,
+        padding: '0 10px',
+        border: 'none',
+        borderRadius: 7,
+        cursor: 'pointer',
+        background: 'transparent',
+        color: 'var(--dsw-alias-brand-primary)',
+        fontSize: 13,
+        fontWeight: 600,
+      },
+      toastProgress: {
+        position: 'absolute',
+        left: 0,
+        bottom: 0,
+        height: 2,
+        width: '100%',
+        background: 'var(--dsw-alias-brand-primary)',
+        transformOrigin: 'left center',
+        animation: 'ui-bg-shrink 10s linear forwards',
+      },
       opacityValue: {
         width: 44,
         textAlign: 'right',
@@ -455,6 +598,44 @@ window.__ModuleLoader__.load({
       }
     }
 
+    /**
+     * Dialogs must cover the whole window, including the sidebar, so they are
+     * portalled to <body> when react-dom is available. Inline `position:fixed`
+     * stays as the fallback: it still renders, only the stacking context of a
+     * transformed ancestor could clip it.
+     */
+    let ReactDOM = null
+    try {
+      ReactDOM = require('react-dom')
+    } catch {
+      ReactDOM = null
+    }
+
+    function inBody(node) {
+      if (typeof document === 'undefined' || !document.body) return node
+      if (ReactDOM && typeof ReactDOM.createPortal === 'function') {
+        return ReactDOM.createPortal(node, document.body)
+      }
+      return node
+    }
+
+    function formatBytes(bytes) {
+      const value = Number(bytes)
+      if (!Number.isFinite(value) || value <= 0) return ''
+      if (value >= 1024 * 1024) {
+        const mb = value / (1024 * 1024)
+        return (mb >= 10 ? mb.toFixed(0) : mb.toFixed(1)) + ' MB'
+      }
+      if (value >= 1024) return Math.round(value / 1024) + ' KB'
+      return Math.round(value) + ' B'
+    }
+
+    const MOTION_CSS = '@keyframes ui-bg-fade-in{from{opacity:0}to{opacity:1}}'
+      + '@keyframes ui-bg-pop-in{from{opacity:0;transform:translateY(10px) scale(.97)}to{opacity:1;transform:none}}'
+      + '@keyframes ui-bg-toast-in{from{opacity:0;transform:translate(-50%,10px)}to{opacity:1;transform:translate(-50%,0)}}'
+      + '@keyframes ui-bg-shrink{from{transform:scaleX(1)}to{transform:scaleX(0)}}'
+      + '@media (prefers-reduced-motion: reduce){[data-ui-bg-motion]{animation:none !important}}'
+
     function createStore(ctx) {
       const t = (key) => ctx.locale.bind(NS)(key)
       let state = {
@@ -477,6 +658,7 @@ window.__ModuleLoader__.load({
         fullId: null,
         fullUrl: null,
         updatedAt: 0,
+        undo: null,
       }
       const listeners = new Set()
       const thumbUrls = {}
@@ -485,6 +667,7 @@ window.__ModuleLoader__.load({
       let pendingPatch = {}
       let resetPending = false
       let fullSeq = 0
+      let undoTimer = 0
 
       function set(patch) {
         state = Object.assign({}, state, patch)
@@ -585,12 +768,20 @@ window.__ModuleLoader__.load({
 
       async function ensureFull(id) {
         if (!id) {
+          // Cancel in-flight loads: the wanted background is now "none".
+          fullSeq += 1
           const previous = state.fullUrl
           if (previous) URL.revokeObjectURL(previous)
           set({ fullId: null, fullUrl: null })
           return
         }
-        if (state.fullId === id && state.fullUrl) return
+        if (state.fullId === id && state.fullUrl) {
+          // Already showing the wanted image. Invalidate older in-flight loads
+          // so a late response cannot replace it with another image (this is
+          // what made "undo delete of a non-current image" hide the wallpaper).
+          fullSeq += 1
+          return
+        }
         fullSeq += 1
         const sequence = fullSeq
         try {
@@ -857,13 +1048,106 @@ window.__ModuleLoader__.load({
         }
       }
 
+      /**
+       * Delete is destructive on the Host, so keep the original bytes in memory
+       * for a short undo window. Re-uploading identical bytes yields the same
+       * content hash, which lets the image return to its old position.
+       */
       async function deleteItem(id) {
         if (!id) return
-        set({ error: null, notice: null })
+        const index = state.items.findIndex((entry) => entry.id === id)
+        const item = index >= 0 ? state.items[index] : null
+        if (!item) return
+        const previousCurrentId = state.currentId
+        set({ busy: true, error: null, notice: null })
+        let blob = null
+        try {
+          const response = await fetch(api('/ui-background/image') + '?id=' + encodeURIComponent(id), {
+            credentials: 'same-origin',
+          })
+          if (response.ok) blob = await response.blob()
+        } catch {
+          /* undo simply stays unavailable */
+        }
         try {
           apply(await request('/ui-background/image/' + encodeURIComponent(id), { method: 'DELETE' }))
+          if (blob) {
+            set({
+              busy: false,
+              undo: {
+                item,
+                index,
+                blob,
+                previousCurrentId,
+                // What the Host picked after the delete; if the user selects
+                // something else before undo, leave that choice alone.
+                autoCurrentId: state.currentId,
+                expiresAt: Date.now() + UNDO_MS,
+              },
+            })
+            scheduleUndoExpiry()
+          } else {
+            set({ busy: false, notice: t('deleteNoUndo').replace('{name}', item.name || t('unnamed')) })
+          }
         } catch {
-          set({ error: t('saveFailed') })
+          set({ busy: false, error: t('saveFailed') })
+        }
+      }
+
+      function scheduleUndoExpiry() {
+        clearUndoTimer()
+        undoTimer = setTimeout(() => {
+          undoTimer = 0
+          if (state.undo) set({ undo: null })
+        }, UNDO_MS)
+      }
+
+      function clearUndoTimer() {
+        if (undoTimer) {
+          clearTimeout(undoTimer)
+          undoTimer = 0
+        }
+      }
+
+      async function undoDelete() {
+        const entry = state.undo
+        if (!entry || state.busy) return
+        clearUndoTimer()
+        set({ undo: null, busy: true, error: null, notice: null })
+        const wasCurrent = entry.previousCurrentId === entry.item.id
+        try {
+          // `select=0`: restore the bytes without re-pointing the background.
+          // A non-current image therefore never steals the background (no
+          // flash); a deleted current image is re-selected explicitly below.
+          const view = await request('/ui-background/image?select=0', {
+            method: 'POST',
+            headers: {
+              'content-type': entry.item.mime,
+              'x-image-name': encodeURIComponent(entry.item.name || ''),
+            },
+            body: entry.blob,
+          })
+          apply(view)
+          const restored = state.items.some((item) => item.id === entry.item.id)
+          if (!restored) {
+            set({ busy: false, error: t('deleteUndoFailed') })
+            return
+          }
+          const ids = state.items.map((item) => item.id).filter((itemId) => itemId !== entry.item.id)
+          ids.splice(Math.min(entry.index, ids.length), 0, entry.item.id)
+          await reorder(ids)
+          if (wasCurrent && state.currentId === entry.autoCurrentId
+            && state.currentId !== entry.item.id) {
+            apply(await request('/ui-background/state', {
+              method: 'PATCH',
+              headers: { 'content-type': 'application/json' },
+              body: JSON.stringify({ currentId: entry.item.id }),
+            }))
+          }
+          set({ busy: false })
+        } catch (error) {
+          const full = error && error.message === 'limit-reached'
+          set({ busy: false, error: full ? t('deleteUndoLimit') : t('deleteUndoFailed') })
         }
       }
 
@@ -942,6 +1226,7 @@ window.__ModuleLoader__.load({
 
       function dispose() {
         clearRotationTimer()
+        clearUndoTimer()
         if (typeof document !== 'undefined') {
           document.removeEventListener('visibilitychange', onVisibilityChange)
         }
@@ -979,6 +1264,7 @@ window.__ModuleLoader__.load({
         selectItem,
         reorder,
         deleteItem,
+        undoDelete,
         refresh,
         ensureGallery,
         dispose,
@@ -1042,6 +1328,9 @@ window.__ModuleLoader__.load({
         const dragIdRef = React.useRef(null)
         const [dragId, setDragId] = React.useState(null)
         const [dragOverId, setDragOverId] = React.useState(null)
+        const [pendingDelete, setPendingDelete] = React.useState(null)
+        const cancelRef = React.useRef(null)
+        const deleteTriggerRef = React.useRef(null)
         const items = Array.isArray(state.items) ? state.items : []
         const currentUrl = state.currentId
           ? (state.thumbs[state.currentId] || (state.fullId === state.currentId ? state.fullUrl : '') || '')
@@ -1203,6 +1492,58 @@ window.__ModuleLoader__.load({
           event.target.value = ''
         }
 
+        function openDeleteDialog(event, item, index) {
+          if (state.busy) return
+          deleteTriggerRef.current = event && event.currentTarget ? event.currentTarget : null
+          setPendingDelete({ item, index })
+        }
+
+        function closeDeleteDialog() {
+          setPendingDelete(null)
+          const trigger = deleteTriggerRef.current
+          deleteTriggerRef.current = null
+          if (trigger && typeof trigger.focus === 'function') trigger.focus()
+        }
+
+        function confirmDelete() {
+          const entry = pendingDelete
+          setPendingDelete(null)
+          if (entry) void store.deleteItem(entry.item.id)
+        }
+
+        function onDialogKeyDown(event) {
+          if (event.key !== 'Tab') return
+          const buttons = event.currentTarget.querySelectorAll('button')
+          if (!buttons.length) return
+          const first = buttons[0]
+          const last = buttons[buttons.length - 1]
+          if (event.shiftKey && document.activeElement === first) {
+            event.preventDefault()
+            last.focus()
+          } else if (!event.shiftKey && document.activeElement === last) {
+            event.preventDefault()
+            first.focus()
+          }
+        }
+
+        React.useEffect(() => {
+          if (!pendingDelete) return undefined
+          const onKeyDown = (event) => {
+            if (event.key !== 'Escape') return
+            event.preventDefault()
+            event.stopPropagation()
+            closeDeleteDialog()
+          }
+          window.addEventListener('keydown', onKeyDown, true)
+          const focusTimer = setTimeout(() => {
+            if (cancelRef.current) cancelRef.current.focus()
+          }, 0)
+          return () => {
+            window.removeEventListener('keydown', onKeyDown, true)
+            clearTimeout(focusTimer)
+          }
+        }, [pendingDelete])
+
         function modeButton(mode, label) {
           const selected = (state.mode === 'overlay') === (mode === 'overlay')
           return h('button', {
@@ -1227,7 +1568,85 @@ window.__ModuleLoader__.load({
           }, label)
         }
 
-        return h('div', { style: S.page },
+        const pendingItem = pendingDelete ? pendingDelete.item : null
+        const pendingName = pendingItem ? (pendingItem.name || t('unnamed')) : ''
+        const pendingThumb = pendingItem ? (state.thumbs[pendingItem.id] || '') : ''
+        const pendingMeta = pendingItem
+          ? [String(pendingItem.mime || '').split('/')[1], formatBytes(pendingItem.size)]
+              .filter(Boolean).join(' · ').toUpperCase()
+          : ''
+        const pendingIsCurrent = Boolean(pendingItem && pendingItem.id === state.currentId)
+
+        const dialogNode = pendingItem ? inBody(h('div', {
+          style: S.backdrop,
+          'data-ui-bg-motion': 'true',
+          onMouseDown: (event) => {
+            if (event.target === event.currentTarget) closeDeleteDialog()
+          },
+        },
+          h('style', { dangerouslySetInnerHTML: { __html: MOTION_CSS } }),
+          h('div', {
+            role: 'alertdialog',
+            'aria-modal': 'true',
+            'data-ui-bg-motion': 'true',
+            'aria-labelledby': 'ui-bg-delete-title',
+            'aria-describedby': 'ui-bg-delete-desc',
+            style: S.dialog,
+            onKeyDown: onDialogKeyDown,
+          },
+            h('h3', { id: 'ui-bg-delete-title', style: S.dialogTitle }, t('deleteTitle')),
+            h('div', { style: S.dialogBody },
+              h('div', {
+                'aria-hidden': 'true',
+                style: Object.assign({}, S.dialogThumb,
+                  pendingThumb ? { backgroundImage: 'url("' + pendingThumb + '")' } : null),
+              }),
+              h('div', { style: S.dialogInfo },
+                h('div', { style: S.dialogName, title: pendingName }, pendingName),
+                pendingMeta ? h('div', { style: S.dialogMeta }, pendingMeta) : null
+              )
+            ),
+            h('p', { id: 'ui-bg-delete-desc', style: S.dialogWarn },
+              t('deleteBody') + (pendingIsCurrent ? ' ' + t('deleteCurrentWarn') : '')
+            ),
+            h('div', { style: S.dialogFooter },
+              h('button', {
+                ref: cancelRef,
+                type: 'button',
+                onClick: closeDeleteDialog,
+                style: S.secondaryButton,
+              }, t('deleteCancel')),
+              h('button', {
+                type: 'button',
+                onClick: confirmDelete,
+                style: S.dangerButton,
+              }, t('deleteConfirm'))
+            )
+          )
+        )) : null
+
+        const toastNode = state.undo ? inBody(h('div', {
+          role: 'status',
+          'aria-live': 'polite',
+          'data-ui-bg-motion': 'true',
+          style: S.toast,
+        },
+          h('style', { dangerouslySetInnerHTML: { __html: MOTION_CSS } }),
+          h('span', { style: S.toastText },
+            t('deleteUndoToast').replace('{name}', state.undo.item.name || t('unnamed'))),
+          h('button', {
+            type: 'button',
+            disabled: state.busy,
+            onClick: () => { void store.undoDelete() },
+            style: state.busy
+              ? Object.assign({}, S.toastAction, { opacity: 0.5, cursor: 'default' })
+              : S.toastAction,
+          }, t('deleteUndoAction')),
+          h('span', { 'aria-hidden': 'true', 'data-ui-bg-motion': 'true', style: S.toastProgress })
+        )) : null
+
+        return h(React.Fragment, null,
+          h('div', { style: S.page },
           h('div', { style: S.header },
             h('h2', { style: S.heading }, t('heading')),
             h('p', { style: S.intro }, t('intro')),
@@ -1273,7 +1692,7 @@ window.__ModuleLoader__.load({
             ),
             h('div', { style: S.galleryFoot },
               items.length > 0
-                ? h('div', { style: S.gallery }, items.map((item) => {
+                ? h('div', { style: S.gallery }, items.map((item, index) => {
                     const thumb = state.thumbs[item.id]
                     const selected = item.id === state.currentId
                     return h('div', {
@@ -1307,7 +1726,7 @@ window.__ModuleLoader__.load({
                         'aria-label': t('remove'),
                         title: t('remove'),
                         onDragStart: (event) => event.stopPropagation(),
-                        onClick: () => { void store.deleteItem(item.id) },
+                        onClick: (event) => openDeleteDialog(event, item, index),
                         style: S.thumbRemove,
                       }, '×')
                     )
@@ -1507,6 +1926,9 @@ window.__ModuleLoader__.load({
           ),
 
           state.error ? h('div', { role: 'alert', style: S.error }, state.error) : null
+        ),
+          dialogNode,
+          toastNode
         )
       }
 

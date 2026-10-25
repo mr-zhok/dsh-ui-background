@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="UI background">
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#7fb8ff"/>
+      <stop offset="100%" stop-color="#dcecff"/>
+    </linearGradient>
+    <clipPath id="frame">
+      <rect x="6" y="10" width="52" height="44" rx="10"/>
+    </clipPath>
+  </defs>
+  <rect x="6" y="10" width="52" height="44" rx="10" fill="url(#sky)"/>
+  <g clip-path="url(#frame)">
+    <circle cx="44" cy="24" r="6" fill="#ffcf5c"/>
+    <path d="M6 50 L22 32 L34 46 L42 38 L58 50 L58 54 L6 54 Z" fill="#2e7d5b"/>
+    <path d="M6 54 L18 44 L28 52 L38 46 L58 54 Z" fill="#1e5c41"/>
+  </g>
+  <rect x="6" y="10" width="52" height="44" rx="10" fill="none" stroke="#ffffff" stroke-opacity="0.5" stroke-width="1.5"/>
+</svg>

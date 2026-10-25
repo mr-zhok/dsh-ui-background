@@ -1,0 +1,4 @@
+# Bundle patch: adds the UI background plugin to the profile's layer stack.
+- insert:
+    - id: ui-background
+      name: '@zhang/dsh-ui-background'

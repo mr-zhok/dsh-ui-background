@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "UI Settings · Background",
+    "description": "Adds a UI Settings section: a library of up to 10 background images with 320px thumbnails, Wallpaper and Overlay modes, a dim overlay, background rotation, and a rebindable clear-background shortcut."
+  }
+}

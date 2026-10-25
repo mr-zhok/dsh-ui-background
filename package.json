@@ -1,0 +1,42 @@
+{
+  "name": "@zhang/dsh-ui-background",
+  "version": "1.8.1",
+  "private": true,
+  "description": "DSH 界面背景：最多 10 张图库、320px 缩略图、壁纸/浮层、暗化遮罩、轮换背景，以及可换绑的去除背景快捷键。",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mr-zhok/dsh-ui-background.git"
+  },
+  "homepage": "https://github.com/mr-zhok/dsh-ui-background#readme",
+  "bugs": {
+    "url": "https://github.com/mr-zhok/dsh-ui-background/issues"
+  },
+  "type": "module",
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg"
+  },
+  "files": [
+    "index.js",
+    "client.js",
+    "cordis.patch.yml",
+    "locale/*.json",
+    "icon.svg"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true,
+      "inject": [
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-client-ui-settings"
+      ]
+    }
+  }
+}

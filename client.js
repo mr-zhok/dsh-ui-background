@@ -200,7 +200,7 @@ window.__ModuleLoader__.load({
         backgroundRepeat: 'no-repeat',
         backgroundImage: 'none',
       },
-      gallery: { width: '100%', display: 'flex', flexWrap: 'wrap', gap: 8 },
+      gallery: { width: '100%', display: 'flex', flexWrap: 'wrap', gap: 8, userSelect: 'none' },
       thumbWrap: { position: 'relative', width: 72, height: 48 },
       thumb: {
         boxSizing: 'border-box',
@@ -212,6 +212,7 @@ window.__ModuleLoader__.load({
         borderRadius: 6,
         background: 'var(--dsw-alias-bg-layer-2)',
         display: 'block',
+        userSelect: 'none',
       },
       thumbImg: { width: '100%', height: '100%', objectFit: 'cover', display: 'block' },
       thumbRemove: {
@@ -833,6 +834,29 @@ window.__ModuleLoader__.load({
         }
       }
 
+      async function reorder(ids) {
+        if (!Array.isArray(ids) || ids.length !== state.items.length) return
+        if (new Set(ids).size !== ids.length) return
+        const byId = new Map(state.items.map((item) => [item.id, item]))
+        const next = []
+        for (const id of ids) {
+          const item = byId.get(id)
+          if (!item) return
+          next.push(item)
+        }
+        const previous = state.items
+        set({ items: next, error: null, notice: null })
+        try {
+          apply(await request('/ui-background/reorder', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ ids }),
+          }))
+        } catch {
+          set({ items: previous, error: t('saveFailed') })
+        }
+      }
+
       async function deleteItem(id) {
         if (!id) return
         set({ error: null, notice: null })
@@ -953,6 +977,7 @@ window.__ModuleLoader__.load({
         cancelRecording,
         upload,
         selectItem,
+        reorder,
         deleteItem,
         refresh,
         ensureGallery,
@@ -1014,6 +1039,9 @@ window.__ModuleLoader__.load({
         const rotateUnitRef = React.useRef('seconds')
         const rotateEditing = React.useRef(false)
         const rotateUnitSynced = React.useRef(false)
+        const dragIdRef = React.useRef(null)
+        const [dragId, setDragId] = React.useState(null)
+        const [dragOverId, setDragOverId] = React.useState(null)
         const items = Array.isArray(state.items) ? state.items : []
         const currentUrl = state.currentId
           ? (state.thumbs[state.currentId] || (state.fullId === state.currentId ? state.fullUrl : '') || '')
@@ -1120,6 +1148,55 @@ window.__ModuleLoader__.load({
           return () => store.clearNotice()
         }, [])
 
+        function onThumbDragStart(event, item) {
+          event.stopPropagation()
+          dragIdRef.current = item.id
+          setDragId(item.id)
+          setDragOverId(null)
+          event.dataTransfer.effectAllowed = 'move'
+          event.dataTransfer.setData('application/x-dsh-ui-background', item.id)
+        }
+
+        function onThumbDragEnd() {
+          dragIdRef.current = null
+          setDragId(null)
+          setDragOverId(null)
+        }
+
+        function onThumbDragOver(event, item) {
+          const source = dragIdRef.current
+          if (!source || source === item.id) return
+          event.preventDefault()
+          event.stopPropagation()
+          event.dataTransfer.dropEffect = 'move'
+          if (dragOverId !== item.id) setDragOverId(item.id)
+        }
+
+        function onThumbDragLeave(event, item) {
+          if (event.currentTarget.contains(event.relatedTarget)) return
+          if (dragOverId === item.id) setDragOverId(null)
+        }
+
+        function onThumbDrop(event, item) {
+          event.preventDefault()
+          event.stopPropagation()
+          const source = dragIdRef.current
+          dragIdRef.current = null
+          setDragId(null)
+          setDragOverId(null)
+          if (!source || source === item.id) return
+          const list = state.items.slice()
+          const from = list.findIndex((entry) => entry.id === source)
+          const target = list.findIndex((entry) => entry.id === item.id)
+          if (from < 0 || target < 0) return
+          const [moved] = list.splice(from, 1)
+          const targetAfterRemoval = target - (from < target ? 1 : 0)
+          const rect = event.currentTarget.getBoundingClientRect()
+          const after = event.clientX > rect.left + rect.width / 2
+          list.splice(targetAfterRemoval + (after ? 1 : 0), 0, moved)
+          void store.reorder(list.map((entry) => entry.id))
+        }
+
         function onPick(event) {
           const file = event.target.files && event.target.files[0]
           if (file) void store.upload(file)
@@ -1199,23 +1276,37 @@ window.__ModuleLoader__.load({
                 ? h('div', { style: S.gallery }, items.map((item) => {
                     const thumb = state.thumbs[item.id]
                     const selected = item.id === state.currentId
-                    return h('div', { key: item.id, style: S.thumbWrap },
+                    return h('div', {
+                      key: item.id,
+                      style: Object.assign({}, S.thumbWrap,
+                        dragId === item.id ? { opacity: 0.35 } : {},
+                        dragOverId === item.id ? { outline: '2px dashed var(--dsw-alias-brand-primary)', outlineOffset: 2 } : {}),
+                      onDragOver: (event) => onThumbDragOver(event, item),
+                      onDragLeave: (event) => onThumbDragLeave(event, item),
+                      onDrop: (event) => onThumbDrop(event, item),
+                    },
                       h('button', {
                         type: 'button',
+                        draggable: true,
                         title: item.name || '',
                         'aria-label': item.name || item.id,
                         'aria-pressed': selected,
                         onClick: () => { void store.selectItem(item.id) },
+                        onDragStart: (event) => onThumbDragStart(event, item),
+                        onDragEnd: onThumbDragEnd,
                         style: Object.assign({}, S.thumb, {
                           border: selected
                             ? '2px solid var(--dsw-alias-brand-primary)'
                             : '1px solid var(--dsw-alias-border-l1)',
+                          cursor: 'grab',
                         }),
-                      }, thumb ? h('img', { src: thumb, alt: '', style: S.thumbImg }) : null),
+                      }, thumb ? h('img', { src: thumb, alt: '', draggable: false, style: S.thumbImg }) : null),
                       h('button', {
                         type: 'button',
+                        draggable: false,
                         'aria-label': t('remove'),
                         title: t('remove'),
+                        onDragStart: (event) => event.stopPropagation(),
                         onClick: () => { void store.deleteItem(item.id) },
                         style: S.thumbRemove,
                       }, '×')

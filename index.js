@@ -161,7 +161,6 @@ export function apply(ctx) {
         seen.add(item.id)
         items.push(item)
       }
-      items.sort((a, b) => a.addedAt - b.addedAt)
       return items
     }
     return migrateLegacy()
@@ -418,11 +417,27 @@ export function apply(ctx) {
       })
     }
 
-    let items = [...found.values()].sort((a, b) => a.addedAt - b.addedAt)
+    const ordered = []
+    const seen = new Set()
+    for (const item of existing) {
+      const fresh = found.get(item.id)
+      if (!fresh) continue
+      ordered.push(fresh)
+      seen.add(item.id)
+    }
+    const newcomers = [...found.values()]
+      .filter((item) => !seen.has(item.id))
+      .sort((a, b) => a.addedAt - b.addedAt)
+    ordered.push(...newcomers)
+
+    let items = ordered
     let overflow = 0
     if (items.length > MAX_ITEMS) {
       overflow = items.length - MAX_ITEMS
-      items = items.slice(items.length - MAX_ITEMS)
+      const keep = new Set(
+        [...items].sort((a, b) => b.addedAt - a.addedAt).slice(0, MAX_ITEMS).map((item) => item.id),
+      )
+      items = items.filter((item) => keep.has(item.id))
     }
 
     const keptIds = new Set(items.map((item) => item.id))
@@ -734,6 +749,45 @@ export function apply(ctx) {
         }
         writeState(state)
         sendJson(response, 200, stateView(state, items))
+      })
+      return
+    }
+
+    if (method === 'POST' && route === '/reorder') {
+      let body
+      try {
+        body = JSON.parse((await readBody(request, MAX_JSON_BYTES)).toString('utf8') || '{}')
+      } catch {
+        sendJson(response, 400, { error: 'invalid json' })
+        return
+      }
+      const ids = body && Array.isArray(body.ids) ? body.ids : null
+      if (!ids) {
+        sendJson(response, 400, { error: 'invalid order' })
+        return
+      }
+      await withMutationLock(() => {
+        const items = readIndex()
+        if (ids.length !== items.length) {
+          sendJson(response, 400, { error: 'invalid order' })
+          return
+        }
+        const byId = new Map(items.map((item) => [item.id, item]))
+        const next = []
+        const seen = new Set()
+        for (const id of ids) {
+          if (typeof id !== 'string' || !byId.has(id) || seen.has(id)) {
+            sendJson(response, 400, { error: 'invalid order' })
+            return
+          }
+          seen.add(id)
+          next.push(byId.get(id))
+        }
+        writeIndex(next)
+        const state = readState(next)
+        state.updatedAt = Date.now()
+        writeState(state)
+        sendJson(response, 200, stateView(state, next))
       })
       return
     }

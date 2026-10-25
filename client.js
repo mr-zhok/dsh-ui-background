@@ -10,7 +10,7 @@
  * module only ever handles blob URLs and state snapshots.
  */
 window.__ModuleLoader__.load({
-  id: '@local/dsh-ui-background',
+  id: '@zhang/dsh-ui-background',
   factory(require) {
     const React = require('react')
     const h = React.createElement

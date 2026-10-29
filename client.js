@@ -20,6 +20,8 @@ window.__ModuleLoader__.load({
     const MAX_BYTES = 12 * 1024 * 1024
     const MAX_ITEMS = 10
     const UNDO_MS = 10 * 1000
+    /** Cross-fade length when the background image changes (rotation/manual). */
+    const CROSSFADE_MS = 480
     const ACCEPT = 'image/png,image/jpeg,image/webp,image/gif'
     const ALLOWED = new Set(['image/png', 'image/jpeg', 'image/webp', 'image/gif'])
 
@@ -460,21 +462,33 @@ window.__ModuleLoader__.load({
       }
     }
 
-    /**
-     * The wallpaper is the document canvas: `body` (and the app root, when it
-     * paints its own layer) carries the image, so the translucent surfaces
-     * above it reveal the wallpaper.
-     */
-    function wallpaperCss(url, dim) {
+    /** Dim scrim + image, used by the canvas and by the cross-fade layer. */
+    function imageLayers(url, dim) {
       const alpha = Math.max(0, Math.min(1, Number(dim) || 0))
       const image = 'url("' + url + '")'
-      const layers = alpha > 0
+      return alpha > 0
         ? 'linear-gradient(rgba(0,0,0,' + alpha.toFixed(3) + '),rgba(0,0,0,' + alpha.toFixed(3) + ')),' + image
         : image
-      return 'body,#root{background-image:' + layers + ' !important;'
+    }
+
+    /**
+     * The wallpaper is the document canvas: `body` carries the image, so the
+     * translucent surfaces above it reveal the wallpaper. `#root` must not
+     * paint its own copy: the cross-fade layer sits between the two, so it
+     * would be hidden by an opaque root background.
+     */
+    function wallpaperCss(url, dim) {
+      return 'body{background-image:' + imageLayers(url, dim) + ' !important;'
         + 'background-size:cover !important;background-position:center !important;'
         + 'background-repeat:no-repeat !important;background-attachment:fixed !important}'
+        + '#root{background-image:none !important;background-color:transparent !important}'
+        + CROSSFADE_CSS
     }
+
+    /** One fade layer: the previous image fading out over the new one. */
+    const CROSSFADE_CSS = '@keyframes ui-bg-crossfade{from{opacity:var(--ui-bg-fade-from,1)}to{opacity:0}}'
+      + '.ui-bg-crossfade{animation:ui-bg-crossfade 480ms ease-out forwards}'
+      + '@media (prefers-reduced-motion: reduce){.ui-bg-crossfade{animation:none;opacity:0}}'
 
     const MODIFIER_CODES = new Set([
       'ControlLeft', 'ControlRight',
@@ -657,6 +671,8 @@ window.__ModuleLoader__.load({
         thumbs: {},
         fullId: null,
         fullUrl: null,
+        fadeUrl: null,
+        fadeKey: 0,
         updatedAt: 0,
         undo: null,
       }
@@ -668,6 +684,7 @@ window.__ModuleLoader__.load({
       let resetPending = false
       let fullSeq = 0
       let undoTimer = 0
+      let fadeTimer = 0
 
       function set(patch) {
         state = Object.assign({}, state, patch)
@@ -766,13 +783,42 @@ window.__ModuleLoader__.load({
         for (const item of state.items) void ensureThumb(item)
       }
 
+      /**
+       * Keep the outgoing image alive for one cross-fade, then revoke it. A
+       * newer change revokes the still-fading URL immediately and takes over
+       * the layer.
+       */
+      function beginCrossfade(url) {
+        if (!url) return
+        const stale = state.fadeUrl
+        if (stale && stale !== url) URL.revokeObjectURL(stale)
+        if (fadeTimer) clearTimeout(fadeTimer)
+        fadeTimer = setTimeout(() => {
+          fadeTimer = 0
+          if (state.fadeUrl === url) set({ fadeUrl: null })
+          URL.revokeObjectURL(url)
+        }, CROSSFADE_MS + 160)
+      }
+
+      function clearCrossfade() {
+        if (fadeTimer) {
+          clearTimeout(fadeTimer)
+          fadeTimer = 0
+        }
+        if (state.fadeUrl) {
+          URL.revokeObjectURL(state.fadeUrl)
+          set({ fadeUrl: null })
+        }
+      }
+
       async function ensureFull(id) {
         if (!id) {
           // Cancel in-flight loads: the wanted background is now "none".
           fullSeq += 1
+          clearCrossfade()
           const previous = state.fullUrl
           if (previous) URL.revokeObjectURL(previous)
-          set({ fullId: null, fullUrl: null })
+          set({ fullId: null, fullUrl: null, fadeUrl: null })
           return
         }
         if (state.fullId === id && state.fullUrl) {
@@ -792,8 +838,14 @@ window.__ModuleLoader__.load({
           const blob = await response.blob()
           if (sequence !== fullSeq) return
           const previous = state.fullUrl
-          set({ fullId: id, fullUrl: URL.createObjectURL(blob) })
-          if (previous) URL.revokeObjectURL(previous)
+          const nextUrl = URL.createObjectURL(blob)
+          beginCrossfade(previous)
+          set({
+            fullId: id,
+            fullUrl: nextUrl,
+            fadeUrl: previous || null,
+            fadeKey: state.fadeKey + 1,
+          })
         } catch {
           /* the background stays hidden until the next load */
         }
@@ -1235,7 +1287,12 @@ window.__ModuleLoader__.load({
         pendingPatch = {}
         loadingThumbs.clear()
         fullSeq += 1
+        if (fadeTimer) {
+          clearTimeout(fadeTimer)
+          fadeTimer = 0
+        }
         if (state.fullUrl) URL.revokeObjectURL(state.fullUrl)
+        if (state.fadeUrl && state.fadeUrl !== state.fullUrl) URL.revokeObjectURL(state.fadeUrl)
         for (const id of Object.keys(thumbUrls)) {
           const url = thumbUrls[id]
           delete thumbUrls[id]
@@ -1942,9 +1999,13 @@ window.__ModuleLoader__.load({
       function Layer() {
         const state = useStore()
         const wallpaper = state.mode !== 'overlay'
-        const currentUrl = state.fullId === state.currentId ? state.fullUrl : null
+        // Keep the previous image on screen until the next one has loaded, so
+        // switching/rotation never drops the background to nothing; the fade
+        // layer then blends old into new.
+        const imageUrl = state.fullUrl
+        const fadeUrl = state.fadeUrl
         const amount = wallpaper ? state.opacity : state.overlayOpacity
-        const active = state.ready && state.enabled && Boolean(currentUrl) && amount > 0
+        const active = state.ready && state.enabled && Boolean(imageUrl) && amount > 0
         const throttled = useThrottled(amount, 80)
 
         React.useEffect(() => {
@@ -1969,25 +2030,66 @@ window.__ModuleLoader__.load({
 
         if (!active) return null
         if (wallpaper) {
-          return h('style', {
-            'data-ui-background': 'wallpaper',
-            dangerouslySetInnerHTML: { __html: wallpaperCss(currentUrl, state.dim) },
-          })
+          return h(React.Fragment, null,
+            h('style', {
+              key: 'wallpaper',
+              'data-ui-background': 'wallpaper',
+              dangerouslySetInnerHTML: { __html: wallpaperCss(imageUrl, state.dim) },
+            }),
+            fadeUrl ? inBody(h('div', {
+              key: 'crossfade-' + state.fadeKey,
+              'aria-hidden': 'true',
+              className: 'ui-bg-crossfade',
+              style: {
+                position: 'fixed',
+                inset: 0,
+                zIndex: -1,
+                pointerEvents: 'none',
+                backgroundImage: imageLayers(fadeUrl, state.dim),
+                backgroundSize: 'cover',
+                backgroundPosition: 'center',
+                backgroundRepeat: 'no-repeat',
+              },
+            })) : null
+          )
         }
-        return h('div', {
-          'aria-hidden': 'true',
-          style: {
-            position: 'fixed',
-            inset: 0,
-            pointerEvents: 'none',
-            backgroundImage: 'url("' + currentUrl + '")',
-            backgroundSize: 'cover',
-            backgroundPosition: 'center',
-            backgroundRepeat: 'no-repeat',
-            opacity: state.overlayOpacity,
-            transition: 'opacity 160ms ease',
-          },
-        })
+        return h(React.Fragment, null,
+          h('style', {
+            key: 'crossfade-css',
+            dangerouslySetInnerHTML: { __html: CROSSFADE_CSS },
+          }),
+          h('div', {
+            key: 'overlay',
+            'aria-hidden': 'true',
+            style: {
+              position: 'fixed',
+              inset: 0,
+              pointerEvents: 'none',
+              backgroundImage: 'url("' + imageUrl + '")',
+              backgroundSize: 'cover',
+              backgroundPosition: 'center',
+              backgroundRepeat: 'no-repeat',
+              opacity: state.overlayOpacity,
+              transition: 'opacity 160ms ease',
+            },
+          }),
+          fadeUrl ? h('div', {
+            key: 'crossfade-' + state.fadeKey,
+            'aria-hidden': 'true',
+            className: 'ui-bg-crossfade',
+            style: {
+              position: 'fixed',
+              inset: 0,
+              pointerEvents: 'none',
+              backgroundImage: 'url("' + fadeUrl + '")',
+              backgroundSize: 'cover',
+              backgroundPosition: 'center',
+              backgroundRepeat: 'no-repeat',
+              opacity: state.overlayOpacity,
+              '--ui-bg-fade-from': state.overlayOpacity,
+            },
+          }) : null
+        )
       }
 
       return { Section, Layer }

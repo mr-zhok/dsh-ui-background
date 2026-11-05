@@ -49,9 +49,21 @@ const DEFAULT_STATE = {
   rotateSeconds: 0,
   rotateOrder: 'sequential',
   shortcut: 'Alt+KeyC',
+  // Work-time widget: these four values are shared by every window; the
+  // running clock itself lives in the client and is never persisted.
+  widgetEnabled: false,
+  widgetStyle: '1',
+  widgetLabel: '工作时长',
+  widgetHideLabel: false,
+  // Dragged viewport coordinates; null = anchored under the window controls,
+  // which the client computes from the current window size.
+  widgetX: null,
+  widgetY: null,
   currentId: null,
   updatedAt: 0,
 }
+const WIDGET_STYLES = new Set(['1', '2', '3', '4', '5', '6', '7', '8', '9', '10'])
+const WIDGET_LABEL_MAX = 5
 const LOOPBACK_HOST = /^(?:127\.0\.0\.1|localhost|\[::1\])(?::\d+)?$/i
 
 export const name = 'ui-background'
@@ -103,6 +115,34 @@ export function apply(ctx) {
     const number = typeof value === 'number' ? value : Number(value)
     if (!Number.isFinite(number) || number <= 0) return 0
     return Math.min(24 * 60 * 60, Math.max(10, Math.round(number)))
+  }
+
+  /** Widget style ids are "1".."10"; anything else keeps the previous value. */
+  function clampWidgetStyle(value, fallback) {
+    const base = WIDGET_STYLES.has(fallback) ? fallback : DEFAULT_STATE.widgetStyle
+    const text = typeof value === 'number' ? String(value) : (typeof value === 'string' ? value.trim() : '')
+    return WIDGET_STYLES.has(text) ? text : base
+  }
+
+  /**
+   * Widget caption: 1–5 characters (code points, so an emoji counts once).
+   * Empty / whitespace-only input keeps the previous/default caption instead
+   * of storing a blank label.
+   */
+  function clampWidgetLabel(value, fallback) {
+    const base = typeof fallback === 'string' && fallback ? fallback : DEFAULT_STATE.widgetLabel
+    if (typeof value !== 'string') return base
+    const trimmed = value.trim()
+    if (!trimmed) return base
+    return Array.from(trimmed).slice(0, WIDGET_LABEL_MAX).join('')
+  }
+
+  /** Dragged widget coordinate: a non-negative integer, or null = anchored. */
+  function clampWidgetCoord(value) {
+    if (value === null || value === undefined) return null
+    const number = typeof value === 'number' ? value : Number(value)
+    if (!Number.isFinite(number)) return null
+    return Math.min(40000, Math.max(0, Math.round(number)))
   }
 
   function imageFile(id, ext) {
@@ -209,6 +249,14 @@ export function apply(ctx) {
       rotateSeconds: clampRotateSeconds(source.rotateSeconds),
       rotateOrder: source.rotateOrder === 'random' ? 'random' : 'sequential',
       shortcut: typeof source.shortcut === 'string' ? source.shortcut.slice(0, 64) : DEFAULT_STATE.shortcut,
+      widgetEnabled: typeof source.widgetEnabled === 'boolean' ? source.widgetEnabled : DEFAULT_STATE.widgetEnabled,
+      widgetStyle: clampWidgetStyle(source.widgetStyle, DEFAULT_STATE.widgetStyle),
+      widgetLabel: clampWidgetLabel(source.widgetLabel),
+      widgetHideLabel: typeof source.widgetHideLabel === 'boolean'
+        ? source.widgetHideLabel
+        : DEFAULT_STATE.widgetHideLabel,
+      widgetX: clampWidgetCoord(source.widgetX),
+      widgetY: clampWidgetCoord(source.widgetY),
       currentId: typeof source.currentId === 'string' && items.some((item) => item.id === source.currentId)
         ? source.currentId
         : null,
@@ -233,6 +281,12 @@ export function apply(ctx) {
       rotateSeconds: state.rotateSeconds,
       rotateOrder: state.rotateOrder,
       shortcut: state.shortcut,
+      widgetEnabled: state.widgetEnabled,
+      widgetStyle: state.widgetStyle,
+      widgetLabel: state.widgetLabel,
+      widgetHideLabel: state.widgetHideLabel,
+      widgetX: state.widgetX,
+      widgetY: state.widgetY,
       currentId: state.currentId,
       updatedAt: state.updatedAt,
       hasImage: current !== null,
@@ -751,6 +805,14 @@ export function apply(ctx) {
           // Canonical "Ctrl+Alt+Shift+Meta+event.code" or "" (disabled).
           state.shortcut = body.shortcut.slice(0, 64)
         }
+        if (typeof body.widgetEnabled === 'boolean') state.widgetEnabled = body.widgetEnabled
+        if (body.widgetStyle !== undefined) state.widgetStyle = clampWidgetStyle(body.widgetStyle, state.widgetStyle)
+        if (body.widgetLabel !== undefined) {
+          state.widgetLabel = clampWidgetLabel(body.widgetLabel, state.widgetLabel)
+        }
+        if (typeof body.widgetHideLabel === 'boolean') state.widgetHideLabel = body.widgetHideLabel
+        if (body.widgetX !== undefined) state.widgetX = clampWidgetCoord(body.widgetX)
+        if (body.widgetY !== undefined) state.widgetY = clampWidgetCoord(body.widgetY)
         if (typeof body.currentId === 'string' && body.currentId !== state.currentId
           && items.some((item) => item.id === body.currentId)) {
           state.currentId = body.currentId

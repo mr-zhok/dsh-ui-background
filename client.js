@@ -80,6 +80,20 @@ window.__ModuleLoader__.load({
       shortcutClear: '清除',
       shortcutCancel: '取消',
       shortcutNone: '未设置',
+      widgetTitle: '小挂件',
+      widgetHint: '在界面右上角显示当前工作时长，可拖动到任意位置。',
+      widgetEnable: '显示小挂件',
+      widgetEnableHint: '关闭后计时清零，下次启动 DSH 不显示。',
+      widgetStyle: '样式',
+      widgetStyleHint: '10 套样式，深浅主题自动适配。',
+      widgetHideLabel: '隐藏文字',
+      widgetHideLabelHint: '隐藏后只显示时间，挂件变成紧凑胶囊。',
+      widgetLabel: '文字',
+      widgetLabelHint: '最多 5 个字，留空不保存。',
+      widgetLabelEmpty: '文字不能为空。',
+      widgetLabelTooLong: '最多 5 个字。',
+      widgetStyleAria: '选择小挂件样式',
+      widgetPicked: '已选样式：{name}',
       loading: '正在读取…',
       loadFailed: '读取背景设置失败，请刷新页面后重试。',
       saveFailed: '保存失败，请重试。',
@@ -143,6 +157,20 @@ window.__ModuleLoader__.load({
       shortcutClear: 'Clear',
       shortcutCancel: 'Cancel',
       shortcutNone: 'Not set',
+      widgetTitle: 'Work widget',
+      widgetHint: 'Shows the current work time at the top-right of the interface; drag it anywhere.',
+      widgetEnable: 'Show widget',
+      widgetEnableHint: 'Turning it off resets the clock, and the next DSH start keeps it hidden.',
+      widgetStyle: 'Style',
+      widgetStyleHint: '10 styles; dark and light themes adapt automatically.',
+      widgetHideLabel: 'Hide caption',
+      widgetHideLabelHint: 'Shows the time only, as a compact pill.',
+      widgetLabel: 'Caption',
+      widgetLabelHint: 'Up to 5 characters; empty is not saved.',
+      widgetLabelEmpty: 'The caption cannot be empty.',
+      widgetLabelTooLong: 'Up to 5 characters.',
+      widgetStyleAria: 'Pick a widget style',
+      widgetPicked: 'Selected style: {name}',
       loading: 'Loading…',
       loadFailed: 'Could not read the background settings. Refresh the page and try again.',
       saveFailed: 'Save failed. Please try again.',
@@ -644,6 +672,556 @@ window.__ModuleLoader__.load({
       return Math.round(value) + ' B'
     }
 
+    // ---------------------------------------------------------------- widget
+    /** 99 days, 23:59:59 — the clock freezes here. */
+    const WIDGET_MAX_SECONDS = 99 * 86400 + 23 * 3600 + 59 * 60 + 59
+    const WIDGET_LABEL_MAX = 5
+    const WIDGET_STYLE_IDS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10']
+    const WIDGET_STYLE_NAMES = {
+      1: '石墨玻璃', 2: '纸感 / 墨', 3: '深空蓝', 4: '琥珀仪表', 5: '薄荷玻璃',
+      6: '单色线框', 7: '纯色卡片', 8: '贴纸卡', 9: '极光环', 10: '柔光浮雕',
+    }
+
+    function pad2(value) {
+      return String(Math.max(0, Math.floor(value))).padStart(2, '0')
+    }
+
+    /** `天:时:分:秒`, days capped at 99. */
+    function formatWorkTime(seconds) {
+      const total = Math.max(0, Math.min(WIDGET_MAX_SECONDS, Math.floor(Number(seconds) || 0)))
+      return pad2(total / 86400 | 0) + ':' + pad2((total % 86400) / 3600 | 0)
+        + ':' + pad2((total % 3600) / 60 | 0) + ':' + pad2(total % 60)
+    }
+
+    function normalizeWidgetLabel(value, fallback) {
+      const base = typeof fallback === 'string' && fallback ? fallback : '工作时长'
+      if (typeof value !== 'string') return base
+      const chars = Array.from(value.trim())
+      if (!chars.length) return base
+      return chars.slice(0, WIDGET_LABEL_MAX).join('')
+    }
+
+    function normalizeWidgetStyle(value) {
+      const id = typeof value === 'number' ? String(value) : String(value || '')
+      return WIDGET_STYLE_IDS.indexOf(id) >= 0 ? id : '1'
+    }
+
+    /**
+     * The ten skins. Each skin
+     * has a dark and a light palette; the component picks one from the theme.
+     */
+    function widgetSkin(styleId, dark) {
+      const id = normalizeWidgetStyle(styleId)
+      if (id === '2') {
+        return dark
+          ? { box: { background: '#1B1E24', color: '#F2F4F8', border: '1px solid rgba(255,255,255,.08)', borderRadius: 14, boxShadow: '0 6px 18px rgba(0,0,0,.35)' }, labelOpacity: 0.55 }
+          : { box: { background: '#FDFCF8', color: '#21262E', border: '1px solid #E4E0D6', borderRadius: 14, boxShadow: '0 6px 16px rgba(33,38,46,.08)' }, labelOpacity: 0.55 }
+      }
+      if (id === '3') {
+        return dark
+          ? { box: { background: '#0B1220', color: '#DCEBFA', border: '1px solid rgba(125,211,252,.20)', borderRadius: 14, boxShadow: '0 0 24px rgba(56,132,255,.16), inset 0 0 22px rgba(56,132,255,.05)' }, timeColor: '#7DD3FC' }
+          : { box: { background: '#EAF2FF', color: '#123A5A', border: '1px solid #C9DDF7', borderRadius: 14, boxShadow: '0 8px 20px rgba(30,80,160,.10)' }, timeColor: '#0B5C8A' }
+      }
+      if (id === '4') {
+        return dark
+          ? { box: { background: '#17140F', color: '#F3E9DA', border: '1px solid rgba(245,199,126,.20)', borderRadius: 12 }, timeColor: '#F5C77E' }
+          : { box: { background: '#FFF9EE', color: '#4A3418', border: '1px solid #F0DFC2', borderRadius: 12, boxShadow: '0 8px 20px rgba(120,80,20,.08)' }, timeColor: '#8A5410' }
+      }
+      if (id === '5') {
+        return dark
+          ? { box: { background: 'rgba(17,64,55,.56)', color: '#D9FBF0', border: '1px solid rgba(180,255,230,.16)', borderRadius: 18, backdropFilter: 'blur(14px) saturate(130%)', WebkitBackdropFilter: 'blur(14px) saturate(130%)', boxShadow: '0 12px 30px rgba(0,0,0,.30), inset 0 1px 0 rgba(255,255,255,.10)' }, timeColor: '#A7F3D0' }
+          : { box: { background: 'rgba(255,255,255,.72)', color: '#0F3D36', border: '1px solid rgba(15,61,54,.10)', borderRadius: 18, backdropFilter: 'blur(14px)', WebkitBackdropFilter: 'blur(14px)', boxShadow: '0 12px 26px rgba(15,61,54,.10), inset 0 1px 0 #fff' }, timeColor: '#0F766E' }
+      }
+      if (id === '6') {
+        return dark
+          ? { box: { background: 'transparent', color: '#EDF1F7', border: '1px solid rgba(255,255,255,.22)', borderRadius: 10 }, labelOpacity: 0.5, labelSpacing: '0.26em', timeWeight: 400 }
+          : { box: { background: 'transparent', color: '#101828', border: '1px solid rgba(16,24,40,.20)', borderRadius: 10 }, labelOpacity: 0.5, labelSpacing: '0.26em', timeWeight: 400 }
+      }
+      if (id === '7') {
+        return dark
+          ? { box: { background: '#15171C', color: '#F1F4F9', border: '1px solid rgba(255,255,255,.07)', borderRadius: 12 } }
+          : { box: { background: '#FFFFFF', color: '#141A22', border: '1px solid #E6E9EE', borderRadius: 12, boxShadow: '0 8px 18px rgba(16,24,40,.07)' } }
+      }
+      if (id === '8') {
+        return dark
+          ? { box: { background: '#24272E', color: '#F7F9FC', border: '1px solid rgba(255,255,255,.10)', borderRadius: 16, boxShadow: '0 10px 22px rgba(0,0,0,.40), 0 1px 0 rgba(255,255,255,.08) inset' } }
+          : { box: { background: '#FFFFFF', color: '#171C24', border: '1px solid #E7EAF0', borderRadius: 16, boxShadow: '0 10px 22px rgba(17,24,39,.12), 0 1px 0 #fff inset' } }
+      }
+      if (id === '9') {
+        const ring = 'conic-gradient(from 210deg, #6FD3FF, #8B7CFF, #59E3B0, #FFD37A, #6FD3FF)'
+        return dark
+          ? { box: { background: 'linear-gradient(#0E1015,#0E1015) padding-box, ' + ring + ' border-box', color: '#EDF2F9', border: '1px solid transparent', borderRadius: 16, boxShadow: '0 12px 30px rgba(0,0,0,.34)' }, timeColor: '#DCEBFF' }
+          : { box: { background: 'linear-gradient(#FFFFFF,#FFFFFF) padding-box, ' + ring + ' border-box', color: '#16202C', border: '1px solid transparent', borderRadius: 16, boxShadow: '0 12px 26px rgba(16,24,40,.10)' } }
+      }
+      if (id === '10') {
+        return dark
+          ? { box: { background: '#24272D', color: '#EDF1F7', borderRadius: 16, boxShadow: '6px 6px 14px rgba(0,0,0,.45), -4px -4px 12px rgba(255,255,255,.045), inset 0 1px 0 rgba(255,255,255,.04)' }, timeColor: '#C7D6EC' }
+          : { box: { background: '#EEF1F6', color: '#1B2330', borderRadius: 16, boxShadow: '6px 6px 14px rgba(163,177,198,.45), -5px -5px 12px #FFFFFF' }, timeColor: '#2B4C77' }
+      }
+      return dark
+        ? { box: { background: 'rgba(30,33,40,.74)', color: '#E7EBF2', border: '1px solid rgba(255,255,255,.10)', borderRadius: 16, backdropFilter: 'blur(12px) saturate(120%)', WebkitBackdropFilter: 'blur(12px) saturate(120%)', boxShadow: '0 10px 28px rgba(0,0,0,.34), inset 0 1px 0 rgba(255,255,255,.07)' } }
+        : { box: { background: 'rgba(255,255,255,.78)', color: '#1B2430', border: '1px solid rgba(17,24,39,.09)', borderRadius: 16, backdropFilter: 'blur(12px) saturate(120%)', WebkitBackdropFilter: 'blur(12px) saturate(120%)', boxShadow: '0 10px 24px rgba(15,23,42,.10), inset 0 1px 0 #fff' } }
+    }
+
+    function widgetBoxStyle(skin, hide) {
+      return Object.assign({
+        boxSizing: 'border-box',
+        width: hide ? 132 : 180,
+        height: hide ? 48 : 72,
+        padding: hide ? '0 10px' : '10px 13px',
+        display: 'flex',
+        flexDirection: hide ? 'row' : 'column',
+        alignItems: hide ? 'center' : 'flex-start',
+        justifyContent: hide ? 'center' : 'flex-start',
+        gap: hide ? 0 : 3,
+        textAlign: 'left',
+        overflow: 'hidden',
+        fontVariantNumeric: 'tabular-nums',
+      }, skin.box)
+    }
+
+    function widgetLabelStyle(skin) {
+      return {
+        fontSize: 10,
+        lineHeight: 1,
+        letterSpacing: skin.labelSpacing || '0.16em',
+        opacity: skin.labelOpacity === undefined ? 0.66 : skin.labelOpacity,
+      }
+    }
+
+    function widgetTimeStyle(skin, hide) {
+      return {
+        fontFamily: 'ui-monospace, "Cascadia Mono", Consolas, monospace',
+        fontSize: hide ? 16 : 21,
+        lineHeight: 1.04,
+        fontWeight: skin.timeWeight || 500,
+        color: skin.timeColor || undefined,
+      }
+    }
+
+    /** Theme detection: token colour first, then body background, then dark. */
+    function readThemeDark() {
+      if (typeof document === 'undefined') return true
+      const root = document.documentElement
+      const attr = String(root.getAttribute('data-theme') || root.getAttribute('data-color-mode') || '').toLowerCase()
+      if (attr.indexOf('dark') >= 0) return true
+      if (attr.indexOf('light') >= 0) return false
+      const luminance = (value) => {
+        const match = String(value || '').match(/rgba?\(([^)]+)\)/i)
+        if (!match) return null
+        const parts = match[1].split(',').map((part) => Number(part.trim()))
+        if (parts.length < 3 || parts.some((part) => !Number.isFinite(part))) return null
+        if (parts.length > 3 && parts[3] === 0) return null
+        return (0.2126 * parts[0] + 0.7152 * parts[1] + 0.0722 * parts[2]) / 255 < 0.5
+      }
+      try {
+        const token = getComputedStyle(root).getPropertyValue('--dsw-alias-bg-base')
+        const byToken = luminance(token)
+        if (byToken !== null) return byToken
+        const byBody = luminance(getComputedStyle(document.body).backgroundColor)
+        if (byBody !== null) return byBody
+      } catch {
+        /* fall through */
+      }
+      return true
+    }
+
+    function useDarkTheme() {
+      const [dark, setDark] = React.useState(readThemeDark)
+      React.useEffect(() => {
+        const update = () => {
+          const next = readThemeDark()
+          setDark((prev) => (prev === next ? prev : next))
+        }
+        let observer = null
+        if (typeof MutationObserver === "function" && typeof document !== "undefined") {
+          // documentElement attributes only: never body, never subtree, so
+          // the widget/preview styles we write cannot feed this observer back.
+          observer = new MutationObserver((records) => {
+            if (!records.length) return
+            if (typeof requestAnimationFrame === "function") requestAnimationFrame(update)
+            else setTimeout(update, 150)
+          })
+          observer.observe(document.documentElement, {
+            attributes: true,
+            attributeFilter: ["class", "style", "data-theme", "data-color-mode"],
+          })
+        }
+        const media = typeof window !== "undefined" && window.matchMedia
+          ? window.matchMedia("(prefers-color-scheme: dark)")
+          : null
+        if (media && media.addEventListener) media.addEventListener("change", update)
+        return () => {
+          if (observer) observer.disconnect()
+          if (media && media.removeEventListener) media.removeEventListener("change", update)
+        }
+      }, [])
+      return dark
+    }
+
+    /**
+     * Default anchor: just below the window's close button (or, when the
+     * controls are native and therefore absent from the DOM, below a typical
+     * titlebar), aligned near the right edge.
+     *
+     * `elementFromPoint` at the top-right corner tells us whether the harness
+     * draws its own controls: if it hits a button-ish node we measure it,
+     * otherwise we fall back to fixed offsets.
+     */
+    function measureWidgetAnchor() {
+      // Matches the agreed default look: inside the content column, just
+      // below the conversation header row, ~56px in from the right edge.
+      const fallback = { top: 64, right: 56 }
+      if (typeof window === 'undefined' || typeof document === 'undefined') return fallback
+      const inset = 56
+      try {
+        // 1) The conversation header (对话 / 轨迹 / 上下文 / 编排 …) is the
+        //    most stable anchor: sit 10px under it.
+        let top = 0
+        const header = document.querySelector('[role="tablist"]')
+        if (header) {
+          const rect = header.getBoundingClientRect()
+          if (rect.height >= 8 && rect.bottom < 260) top = rect.bottom + 10
+        }
+        // 2) Fall back to the window buttons: 10px under the close button.
+        if (!top) {
+          const corner = window.innerWidth
+          const probes = [[corner - 18, 18], [corner - 52, 18], [corner - 86, 18]]
+          for (const probe of probes) {
+            const hit = document.elementFromPoint(probe[0], probe[1])
+            if (!hit || typeof hit.closest !== 'function') continue
+            const button = hit.closest('button, [role="button"]')
+            if (!button) continue
+            const rect = button.getBoundingClientRect()
+            if (rect.width < 8 || rect.height < 8 || rect.bottom > 120) continue
+            top = rect.bottom + 10
+            break
+          }
+        }
+        if (top) return { top: Math.round(top), right: inset }
+      } catch {
+        /* fall back */
+      }
+      return fallback
+    }
+
+    /** Rendered size of the widget (with / without the caption row). */
+    function widgetSize(hide) {
+      return hide ? { width: 132, height: 48 } : { width: 180, height: 72 }
+    }
+
+    function clampWidgetPos(left, top, size) {
+      if (typeof window === 'undefined') return { left: Math.max(0, left), top: Math.max(0, top) }
+      const maxLeft = Math.max(8, window.innerWidth - size.width - 8)
+      const maxTop = Math.max(8, window.innerHeight - size.height - 8)
+      return {
+        left: Math.min(maxLeft, Math.max(8, Math.round(left))),
+        top: Math.min(maxTop, Math.max(8, Math.round(top))),
+      }
+    }
+
+    /**
+     * Stored drag position wins; otherwise anchor under the window controls.
+     * Always clamped so a shrunken window cannot push the card off-screen.
+     */
+    function resolveWidgetPos(state, hide) {
+      const size = widgetSize(hide)
+      if (Number.isFinite(state.widgetX) && Number.isFinite(state.widgetY)) {
+        return clampWidgetPos(state.widgetX, state.widgetY, size)
+      }
+      const anchor = measureWidgetAnchor()
+      const width = typeof window === 'undefined' ? size.width : window.innerWidth
+      return clampWidgetPos(width - anchor.right - size.width, anchor.top, size)
+    }
+
+
+    const UNITLESS_STYLES = new Set([
+      'fontWeight', 'opacity', 'lineHeight', 'zIndex', 'flex', 'flexGrow', 'flexShrink',
+      'order', 'zoom', 'gridRow', 'gridColumn', 'fontVariantNumeric', 'pointerEvents',
+    ])
+
+    function assignStyles(element, style) {
+      for (const key of Object.keys(style)) {
+        const value = style[key]
+        if (value === undefined || value === null) continue
+        if (typeof value === 'number') {
+          element.style[key] = UNITLESS_STYLES.has(key) ? String(value) : value + 'px'
+        } else {
+          element.style[key] = String(value)
+        }
+      }
+    }
+
+    /**
+     * The floating widget is plain DOM appended to `document.body` — same
+     * approach as the whale widget. Rendering it inside a client Slot made
+     * `position: fixed` resolve against a transformed ancestor, so the card
+     * landed in the wrong corner and could only slide horizontally. Owning the
+     * node also makes dragging and hit-testing straightforward.
+     */
+    function createWidgetController(store) {
+      let node = null
+      let labelNode = null
+      let timeNode = null
+      let timer = 0
+      let startedAt = 0
+      let running = false
+      let drag = null
+      let unsubscribe = null
+      let observer = null
+      let resizeHandler = null
+      let defaultPos = null
+      let rafId = 0
+      let lastSkinKey = ''
+      let lastLabel = null
+      let lastText = ''
+      let lastLeft = null
+      let lastTop = null
+      let lastDark = null
+
+      function elapsed() {
+        return running ? Math.floor((Date.now() - startedAt) / 1000) : 0
+      }
+
+      function updateTime() {
+        if (!timeNode) return
+        const text = formatWorkTime(elapsed())
+        if (text === lastText) return
+        lastText = text
+        timeNode.textContent = text
+      }
+
+      function startClock() {
+        if (running) return
+        running = true
+        startedAt = Date.now()
+        if (timer) clearInterval(timer)
+        timer = setInterval(updateTime, 1000)
+      }
+
+      function stopClock() {
+        if (timer) {
+          clearInterval(timer)
+          timer = 0
+        }
+        running = false
+        startedAt = 0
+      }
+
+      /**
+       * Node and children are created exactly once. Later syncs only touch
+       * textContent / style / left+top, so a quiet widget produces zero DOM
+       * mutations per tick — the old full rebuild fed the host's body-wide
+       * MutationObserver forever and froze the window.
+       */
+      function buildNode() {
+        if (node || typeof document === 'undefined' || !document.body) return
+        node = document.createElement('div')
+        node.setAttribute('data-ui-background', 'widget')
+        node.setAttribute('role', 'status')
+        node.title = '拖动可移动小挂件'
+        node.style.position = 'fixed'
+        node.style.zIndex = '30'
+        node.style.pointerEvents = 'auto'
+        node.style.cursor = 'grab'
+        node.style.touchAction = 'none'
+        node.style.userSelect = 'none'
+        node.addEventListener('pointerdown', onPointerDown)
+        node.addEventListener('pointermove', onPointerMove)
+        node.addEventListener('pointerup', endDrag)
+        node.addEventListener('pointercancel', endDrag)
+
+        labelNode = document.createElement('div')
+        labelNode.textContent = ''
+        node.appendChild(labelNode)
+        timeNode = document.createElement('div')
+        timeNode.textContent = ''
+        node.appendChild(timeNode)
+
+        lastSkinKey = ''
+        lastLabel = null
+        lastText = ''
+        lastLeft = null
+        lastTop = null
+        document.body.appendChild(node)
+      }
+
+      function removeNode() {
+        if (!node) return
+        node.removeEventListener('pointerdown', onPointerDown)
+        node.removeEventListener('pointermove', onPointerMove)
+        node.removeEventListener('pointerup', endDrag)
+        node.removeEventListener('pointercancel', endDrag)
+        if (node.parentNode) node.parentNode.removeChild(node)
+        node = null
+        labelNode = null
+        timeNode = null
+        lastSkinKey = ''
+        lastLabel = null
+        lastText = ''
+        lastLeft = null
+        lastTop = null
+        drag = null
+      }
+
+      function applySkin(skin, hide) {
+        assignStyles(node, widgetBoxStyle(skin, hide))
+        // Layout/stacking is owned by ensureNode(), not by the skin.
+        node.style.position = 'fixed'
+        node.style.pointerEvents = 'auto'
+        node.style.cursor = drag ? 'grabbing' : 'grab'
+        assignStyles(labelNode, widgetLabelStyle(skin))
+        assignStyles(timeNode, widgetTimeStyle(skin, hide))
+        labelNode.style.display = hide ? 'none' : ''
+      }
+
+      function widgetPosition(state, hide) {
+        const size = widgetSize(hide)
+        if (Number.isFinite(state.widgetX) && Number.isFinite(state.widgetY)) {
+          return clampWidgetPos(state.widgetX, state.widgetY, size)
+        }
+        if (!defaultPos) defaultPos = resolveWidgetPos({ widgetX: null, widgetY: null }, hide)
+        return clampWidgetPos(defaultPos.left, defaultPos.top, size)
+      }
+
+      function sync() {
+        const state = store.getSnapshot()
+        if (!state.ready || !state.widgetEnabled) {
+          stopClock()
+          removeNode()
+          return
+        }
+        buildNode()
+        if (!node) return
+
+        const hide = state.widgetHideLabel === true
+        const dark = readThemeDark()
+        lastDark = dark
+        const skinKey = state.widgetStyle + '|' + (hide ? '1' : '0') + '|' + (dark ? 'd' : 'l')
+        if (skinKey !== lastSkinKey) {
+          lastSkinKey = skinKey
+          applySkin(widgetSkin(state.widgetStyle, dark), hide)
+        }
+
+        const label = state.widgetLabel
+        if (label !== lastLabel) {
+          lastLabel = label
+          labelNode.textContent = label
+        }
+
+        const position = widgetPosition(state, hide)
+        if (position.left !== lastLeft) {
+          lastLeft = position.left
+          node.style.left = position.left + 'px'
+        }
+        if (position.top !== lastTop) {
+          lastTop = position.top
+          node.style.top = position.top + 'px'
+        }
+
+        startClock()
+        updateTime()
+      }
+
+      function onPointerDown(event) {
+        if (!node) return
+        if (event.button !== undefined && event.button !== 0) return
+        const left = parseFloat(node.style.left) || 0
+        const top = parseFloat(node.style.top) || 0
+        drag = {
+          offsetX: event.clientX - left,
+          offsetY: event.clientY - top,
+          pointerId: event.pointerId,
+          left,
+          top,
+          moved: false,
+        }
+        node.style.cursor = 'grabbing'
+        try { node.setPointerCapture(event.pointerId) } catch { /* ignore */ }
+        event.preventDefault()
+      }
+
+      function onPointerMove(event) {
+        if (!drag || !node) return
+        if (event.pointerId !== undefined && event.pointerId !== drag.pointerId) return
+        const hide = store.getSnapshot().widgetHideLabel === true
+        const next = clampWidgetPos(
+          event.clientX - drag.offsetX,
+          event.clientY - drag.offsetY,
+          widgetSize(hide),
+        )
+        if (next.left !== drag.left || next.top !== drag.top) drag.moved = true
+        drag.left = next.left
+        drag.top = next.top
+        lastLeft = next.left
+        lastTop = next.top
+        node.style.left = next.left + 'px'
+        node.style.top = next.top + 'px'
+      }
+
+      function endDrag() {
+        if (!drag) return
+        const finished = drag
+        drag = null
+        if (node) {
+          node.style.cursor = 'grab'
+          try { node.releasePointerCapture(finished.pointerId) } catch { /* ignore */ }
+        }
+        if (finished.moved) store.setWidgetPos(finished.left, finished.top)
+      }
+
+      /**
+       * The only external trigger we watch is the theme. We observe
+       * documentElement attributes ONLY (never body, never subtree), debounce
+       * to one animation frame, and re-skin only when the resolved theme
+       * actually flipped — so our own writes can never re-enter this.
+       */
+      function scheduleThemeCheck() {
+        if (rafId) return
+        const run = () => {
+          rafId = 0
+          const dark = readThemeDark()
+          if (dark === lastDark) return
+          lastDark = dark
+          sync()
+        }
+        rafId = (typeof requestAnimationFrame === 'function')
+          ? requestAnimationFrame(run)
+          : setTimeout(run, 150)
+      }
+
+      function start() {
+        if (typeof document === 'undefined' || !document.body) return
+        unsubscribe = store.subscribe(sync)
+        resizeHandler = () => { defaultPos = null; sync() }
+        window.addEventListener('resize', resizeHandler)
+        observer = new MutationObserver(scheduleThemeCheck)
+        observer.observe(document.documentElement, {
+          attributes: true,
+          attributeFilter: ['class', 'style', 'data-theme', 'data-color-mode'],
+        })
+        sync()
+      }
+
+      function stop() {
+        if (unsubscribe) unsubscribe()
+        unsubscribe = null
+        if (resizeHandler) window.removeEventListener('resize', resizeHandler)
+        resizeHandler = null
+        if (observer) observer.disconnect()
+        observer = null
+        if (rafId) {
+          if (typeof cancelAnimationFrame === 'function') cancelAnimationFrame(rafId)
+          else clearTimeout(rafId)
+          rafId = 0
+        }
+        stopClock()
+        removeNode()
+      }
+
+      return { start, stop }
+    }
+
     const MOTION_CSS = '@keyframes ui-bg-fade-in{from{opacity:0}to{opacity:1}}'
       + '@keyframes ui-bg-pop-in{from{opacity:0;transform:translateY(10px) scale(.97)}to{opacity:1;transform:none}}'
       + '@keyframes ui-bg-toast-in{from{opacity:0;transform:translate(-50%,10px)}to{opacity:1;transform:translate(-50%,0)}}'
@@ -666,6 +1244,12 @@ window.__ModuleLoader__.load({
         rotateOrder: 'sequential',
         shortcut: 'Alt+KeyC',
         recording: false,
+        widgetEnabled: false,
+        widgetStyle: '1',
+        widgetLabel: '工作时长',
+        widgetHideLabel: false,
+        widgetX: null,
+        widgetY: null,
         currentId: null,
         items: [],
         thumbs: {},
@@ -688,7 +1272,13 @@ window.__ModuleLoader__.load({
 
       function set(patch) {
         state = Object.assign({}, state, patch)
-        for (const listener of [...listeners]) listener()
+        for (const listener of [...listeners]) {
+          try {
+            listener()
+          } catch (error) {
+            if (typeof console !== 'undefined') console.warn('[ui-background] listener failed', error)
+          }
+        }
       }
 
       function subscribe(listener) {
@@ -869,6 +1459,12 @@ window.__ModuleLoader__.load({
             ? 'random'
             : (view.rotateOrder === 'sequential' ? 'sequential' : state.rotateOrder),
           shortcut: typeof view.shortcut === 'string' ? view.shortcut : state.shortcut,
+          widgetEnabled: view.widgetEnabled === true,
+          widgetStyle: normalizeWidgetStyle(view.widgetStyle === undefined ? state.widgetStyle : view.widgetStyle),
+          widgetLabel: normalizeWidgetLabel(view.widgetLabel, state.widgetLabel),
+          widgetHideLabel: view.widgetHideLabel === true,
+          widgetX: Number.isFinite(view.widgetX) ? Math.round(view.widgetX) : null,
+          widgetY: Number.isFinite(view.widgetY) ? Math.round(view.widgetY) : null,
           currentId: typeof view.currentId === 'string' ? view.currentId : null,
           updatedAt: typeof view.updatedAt === 'number' ? view.updatedAt : 0,
           items,
@@ -991,6 +1587,7 @@ window.__ModuleLoader__.load({
       }
 
       let rotationTimer = 0
+      let rotationDueAt = 0
 
       function clearRotationTimer() {
         if (rotationTimer) {
@@ -1000,20 +1597,44 @@ window.__ModuleLoader__.load({
       }
 
       function canRotate() {
+        // Deliberately no visibility check: a hidden/occluded window (Electron
+        // may report the page as hidden) must still rotate, otherwise the first
+        // interval after hiding never fires and the background looks stuck.
         return state.ready
           && state.enabled
           && state.rotateSeconds >= 10
           && state.items.length >= 2
-          && (typeof document === 'undefined' || document.visibilityState !== 'hidden')
+      }
+
+      /**
+       * Wake at least every 30s instead of sleeping the whole interval: sleeps,
+       * frozen pages and throttled timers then catch up instead of losing the
+       * rotation entirely.
+       */
+      function armRotation() {
+        if (!canRotate() || !rotationDueAt) return
+        if (rotationTimer) clearTimeout(rotationTimer)
+        const wait = Math.max(500, rotationDueAt - Date.now())
+        rotationTimer = setTimeout(fireRotation, Math.min(wait, 30000))
+      }
+
+      function fireRotation() {
+        rotationTimer = 0
+        if (!canRotate()) return
+        if (rotationDueAt && Date.now() < rotationDueAt) {
+          armRotation()
+          return
+        }
+        rotationDueAt = 0
+        void rotateNext()
       }
 
       function scheduleRotation() {
         clearRotationTimer()
+        rotationDueAt = 0
         if (!canRotate()) return
-        rotationTimer = setTimeout(() => {
-          rotationTimer = 0
-          void rotateNext()
-        }, state.rotateSeconds * 1000)
+        rotationDueAt = Date.now() + state.rotateSeconds * 1000
+        armRotation()
       }
 
       async function rotateNext() {
@@ -1034,11 +1655,17 @@ window.__ModuleLoader__.load({
       }
 
       const onVisibilityChange = () => {
-        if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
-          clearRotationTimer()
-        } else {
-          scheduleRotation()
+        if (typeof document === 'undefined') return
+        if (document.visibilityState === 'hidden') {
+          // Keep the timer running. It may be throttled while hidden, but the
+          // due timestamp is authoritative and the next tick catches up.
+          return
         }
+        if (rotationDueAt && Date.now() >= rotationDueAt) {
+          fireRotation()
+          return
+        }
+        armRotation()
       }
       if (typeof document !== 'undefined') {
         document.addEventListener('visibilitychange', onVisibilityChange)
@@ -1048,6 +1675,39 @@ window.__ModuleLoader__.load({
         const next = typeof value === 'string' ? value.slice(0, 64) : ''
         set({ shortcut: next, recording: false, error: null, notice: null })
         void persist({ shortcut: next })
+      }
+
+      function setWidgetEnabled(value) {
+        const next = value === true
+        set({ widgetEnabled: next, error: null, notice: null })
+        void persist({ widgetEnabled: next })
+      }
+
+      function setWidgetStyle(value) {
+        const next = normalizeWidgetStyle(value)
+        set({ widgetStyle: next, error: null, notice: null })
+        void persist({ widgetStyle: next })
+      }
+
+      function setWidgetLabel(value) {
+        const next = normalizeWidgetLabel(value, state.widgetLabel)
+        set({ widgetLabel: next, error: null, notice: null })
+        void persist({ widgetLabel: next })
+        return next
+      }
+
+      function setWidgetHideLabel(value) {
+        const next = value === true
+        set({ widgetHideLabel: next, error: null, notice: null })
+        void persist({ widgetHideLabel: next })
+      }
+
+      /** Persist the dragged viewport position (shared by every window). */
+      function setWidgetPos(left, top) {
+        const x = Number.isFinite(left) ? Math.max(0, Math.round(left)) : null
+        const y = Number.isFinite(top) ? Math.max(0, Math.round(top)) : null
+        set({ widgetX: x, widgetY: y, error: null, notice: null })
+        void persist({ widgetX: x, widgetY: y })
       }
 
       function startRecording() {
@@ -1315,6 +1975,11 @@ window.__ModuleLoader__.load({
         clearBackground,
         clearNotice,
         setShortcut,
+        setWidgetEnabled,
+        setWidgetStyle,
+        setWidgetLabel,
+        setWidgetHideLabel,
+        setWidgetPos,
         startRecording,
         cancelRecording,
         upload,
@@ -1372,6 +2037,189 @@ window.__ModuleLoader__.load({
         return throttled
       }
 
+      // ------------------------------------------------------------ widget
+      /** The widget face at its real size; `WidgetPreview` scales it down. */
+      function WidgetFace(props) {
+        const skin = widgetSkin(props.styleId, props.dark)
+        return h('div', { style: widgetBoxStyle(skin, props.hide) },
+          props.hide ? null : h('div', { style: widgetLabelStyle(skin) }, props.label),
+          h('div', { style: widgetTimeStyle(skin, props.hide) }, props.time),
+        )
+      }
+
+      function WidgetPreview(props) {
+        const hide = props.hide === true
+        const width = (hide ? 132 : 180) * props.scale
+        const height = (hide ? 48 : 72) * props.scale
+        return h('div', {
+          style: {
+            width: Math.round(width),
+            height: Math.round(height),
+            position: 'relative',
+            overflow: 'hidden',
+            borderRadius: 10,
+            flex: '0 0 auto',
+          },
+        }, h('div', {
+          style: {
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            transform: 'scale(' + props.scale + ')',
+            transformOrigin: 'top left',
+            pointerEvents: 'none',
+          },
+        }, h(WidgetFace, {
+          styleId: props.styleId,
+          dark: props.themeDark,
+          hide,
+          label: props.label,
+          time: '12:34:56:07',
+        })))
+      }
+
+      /** Style picker: a mini-preview trigger and a grid of mini previews. */
+      function WidgetStylePicker(props) {
+        const dark = useDarkTheme()
+        const [open, setOpen] = React.useState(false)
+        const rootRef = React.useRef(null)
+        const triggerRef = React.useRef(null)
+        const listRef = React.useRef(null)
+        const t = props.t
+
+        React.useEffect(() => {
+          if (!open) return undefined
+          const onDown = (event) => {
+            if (rootRef.current && !rootRef.current.contains(event.target)) setOpen(false)
+          }
+          const onKey = (event) => {
+            if (event.key !== 'Escape') return
+            event.preventDefault()
+            event.stopPropagation()
+            setOpen(false)
+            if (triggerRef.current) triggerRef.current.focus()
+          }
+          document.addEventListener('mousedown', onDown, true)
+          document.addEventListener('keydown', onKey, true)
+          const focusTimer = setTimeout(() => {
+            if (!listRef.current) return
+            const selected = listRef.current.querySelector('[aria-selected="true"]')
+            if (selected) selected.focus()
+          }, 0)
+          return () => {
+            document.removeEventListener('mousedown', onDown, true)
+            document.removeEventListener('keydown', onKey, true)
+            clearTimeout(focusTimer)
+          }
+        }, [open])
+
+        function moveFocus(delta) {
+          if (!listRef.current) return
+          const buttons = Array.from(listRef.current.querySelectorAll('button'))
+          if (!buttons.length) return
+          const current = buttons.indexOf(document.activeElement)
+          const next = Math.min(buttons.length - 1, Math.max(0, (current < 0 ? 0 : current) + delta))
+          buttons[next].focus()
+        }
+
+        return h('div', { ref: rootRef, style: { position: 'relative' } },
+          h('button', {
+            ref: triggerRef,
+            type: 'button',
+            'aria-label': t('widgetStyleAria'),
+            'aria-haspopup': 'listbox',
+            'aria-expanded': open,
+            onClick: () => setOpen(!open),
+            onKeyDown: (event) => {
+              if (event.key === 'ArrowDown' || event.key === 'ArrowUp' || event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault()
+                setOpen(true)
+              }
+            },
+            style: {
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+              padding: 4,
+              border: '1px solid var(--dsw-alias-border-l1)',
+              borderRadius: 10,
+              background: 'var(--dsw-alias-bg-layer-2)',
+              cursor: 'pointer',
+            },
+          },
+            h(WidgetPreview, {
+              styleId: props.value,
+              themeDark: dark,
+              hide: false,
+              label: props.label,
+              scale: 0.6,
+            }),
+            h('span', {
+              style: { fontSize: 9, color: 'var(--dsw-alias-label-secondary)', paddingRight: 4 },
+            }, '▾')
+          ),
+          open ? h('div', {
+            ref: listRef,
+            role: 'listbox',
+            'aria-label': t('widgetStyleAria'),
+            onKeyDown: (event) => {
+              if (event.key === 'ArrowDown') {
+                event.preventDefault()
+                moveFocus(1)
+              } else if (event.key === 'ArrowUp') {
+                event.preventDefault()
+                moveFocus(-1)
+              }
+            },
+            style: {
+              position: 'absolute',
+              top: 'calc(100% + 6px)',
+              left: 0,
+              zIndex: 60,
+              display: 'grid',
+              gridTemplateColumns: 'repeat(4, max-content)',
+              gap: 6,
+              padding: 8,
+              maxHeight: 192,
+              overflowY: 'auto',
+              overscrollBehavior: 'contain',
+              scrollbarWidth: 'thin',
+              borderRadius: 12,
+              border: '1px solid var(--dsw-alias-border-l1)',
+              background: 'var(--dsw-alias-bg-overlay, var(--dsw-alias-bg-layer-1))',
+              boxShadow: '0 16px 40px rgba(0,0,0,.28)',
+            },
+          }, WIDGET_STYLE_IDS.map((id) => h('button', {
+            key: id,
+            type: 'button',
+            role: 'option',
+            'aria-selected': id === props.value,
+            'aria-label': WIDGET_STYLE_NAMES[id],
+            onClick: () => {
+              props.onChange(id)
+              setOpen(false)
+              if (triggerRef.current) triggerRef.current.focus()
+            },
+            style: {
+              display: 'flex',
+              padding: 3,
+              border: id === props.value
+                ? '2px solid var(--dsw-alias-brand-primary)'
+                : '2px solid transparent',
+              borderRadius: 10,
+              background: 'transparent',
+              cursor: 'pointer',
+            },
+          }, h(WidgetPreview, {
+            styleId: id,
+            themeDark: dark,
+            hide: false,
+            label: props.label,
+            scale: 0.58,
+          })))) : null
+        )
+      }
+
       function Section() {
         const state = useStore()
         useSyncExternalStore(ticker.subscribe, ticker.getSnapshot, ticker.getSnapshot)
@@ -1388,6 +2236,9 @@ window.__ModuleLoader__.load({
         const [pendingDelete, setPendingDelete] = React.useState(null)
         const cancelRef = React.useRef(null)
         const deleteTriggerRef = React.useRef(null)
+        const [widgetLabelDraft, setWidgetLabelDraft] = React.useState(state.widgetLabel)
+        const [widgetLabelError, setWidgetLabelError] = React.useState(null)
+        const widgetLabelEditing = React.useRef(false)
         const items = Array.isArray(state.items) ? state.items : []
         const currentUrl = state.currentId
           ? (state.thumbs[state.currentId] || (state.fullId === state.currentId ? state.fullUrl : '') || '')
@@ -1493,6 +2344,33 @@ window.__ModuleLoader__.load({
           store.clearNotice()
           return () => store.clearNotice()
         }, [])
+
+        React.useEffect(() => {
+          if (widgetLabelEditing.current) return
+          setWidgetLabelDraft(state.widgetLabel)
+        }, [state.widgetLabel])
+
+        function onWidgetLabelChange(event) {
+          widgetLabelEditing.current = true
+          const chars = Array.from(String(event.target.value))
+          setWidgetLabelDraft(chars.slice(0, WIDGET_LABEL_MAX).join(''))
+          setWidgetLabelError(null)
+        }
+
+        function commitWidgetLabel() {
+          widgetLabelEditing.current = false
+          const chars = Array.from(widgetLabelDraft.trim())
+          if (!chars.length) {
+            setWidgetLabelError(t('widgetLabelEmpty'))
+            return
+          }
+          if (chars.length > WIDGET_LABEL_MAX) {
+            setWidgetLabelError(t('widgetLabelTooLong'))
+            return
+          }
+          setWidgetLabelError(null)
+          store.setWidgetLabel(chars.join(''))
+        }
 
         function onThumbDragStart(event, item) {
           event.stopPropagation()
@@ -1982,6 +2860,114 @@ window.__ModuleLoader__.load({
             )
           ),
 
+          h('div', {
+            style: Object.assign({}, S.card, {
+              flexDirection: 'column',
+              alignItems: 'stretch',
+              gap: 12,
+            }),
+          },
+            h('div', { style: { display: 'flex', flexDirection: 'column', gap: 4 } },
+              h('div', { style: S.label }, t('widgetTitle')),
+              h('div', { style: S.hint }, t('widgetHint'))
+            ),
+
+            h('div', { style: { display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' } },
+              h('button', {
+                type: 'button',
+                role: 'switch',
+                'aria-checked': state.widgetEnabled,
+                'aria-label': t('widgetEnable'),
+                onClick: () => store.setWidgetEnabled(!state.widgetEnabled),
+                style: {
+                  position: 'relative',
+                  width: 36,
+                  height: 20,
+                  padding: 0,
+                  border: 'none',
+                  borderRadius: 999,
+                  cursor: 'pointer',
+                  flex: '0 0 auto',
+                  background: state.widgetEnabled
+                    ? 'var(--dsw-alias-button-primary-fill, var(--dsw-alias-brand-primary))'
+                    : 'var(--dsw-alias-border-l2)',
+                  transition: 'background 120ms ease',
+                },
+              }, h('span', {
+                style: {
+                  position: 'absolute',
+                  top: 2,
+                  left: state.widgetEnabled ? 18 : 2,
+                  width: 16,
+                  height: 16,
+                  borderRadius: '50%',
+                  background: 'var(--dsw-alias-label-primary-foreground, var(--dsw-alias-bg-base))',
+                  boxShadow: '0 1px 2px rgba(0, 0, 0, 0.25)',
+                  transition: 'left 120ms ease',
+                },
+              })),
+              h('span', { style: { fontSize: 13 } }, t('widgetEnable')),
+              h('span', { style: S.hint }, t('widgetEnableHint'))
+            ),
+
+            h('div', { style: { display: 'flex', alignItems: 'center', gap: 10 } },
+              h('span', { style: { fontSize: 13, color: 'var(--dsw-alias-label-secondary)', minWidth: 40 } }, t('widgetStyle')),
+              h(WidgetStylePicker, {
+                value: state.widgetStyle,
+                label: state.widgetLabel,
+                t,
+                onChange: (id) => store.setWidgetStyle(id),
+              })
+            ),
+
+            h('div', { style: { display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' } },
+              h('span', { style: { fontSize: 13, color: 'var(--dsw-alias-label-secondary)', minWidth: 40 } }, t('widgetLabel')),
+              h('input', {
+                type: 'text',
+                value: widgetLabelDraft,
+                maxLength: WIDGET_LABEL_MAX,
+                autoComplete: 'off',
+                'aria-label': t('widgetLabel'),
+                onChange: onWidgetLabelChange,
+                onBlur: commitWidgetLabel,
+                onKeyDown: (event) => {
+                  if (event.key === 'Enter') {
+                    event.currentTarget.blur()
+                  } else if (event.key === 'Escape') {
+                    widgetLabelEditing.current = false
+                    setWidgetLabelDraft(state.widgetLabel)
+                    setWidgetLabelError(null)
+                    event.currentTarget.blur()
+                  }
+                },
+                style: Object.assign({}, S.input, { width: 110 }),
+              }),
+              h('span', { style: S.hint }, '\uff08' + t('widgetLabelHint').replace(/\u3002$/, '') + '\uff09'),
+              h('label', {
+                style: {
+                  marginLeft: 'auto',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 7,
+                  fontSize: 13,
+                  cursor: 'pointer',
+                  whiteSpace: 'nowrap',
+                },
+              },
+                h('input', {
+                  type: 'checkbox',
+                  checked: state.widgetHideLabel,
+                  'aria-label': t('widgetHideLabel'),
+                  onChange: (event) => store.setWidgetHideLabel(event.target.checked),
+                  style: { width: 16, height: 16, margin: 0, cursor: 'pointer', accentColor: 'var(--dsw-alias-brand-primary)' },
+                }),
+                t('widgetHideLabel')
+              )
+            ),
+
+            widgetLabelError ? h('div', { role: 'alert', style: S.error }, widgetLabelError) : null
+          ),
+
           state.error ? h('div', { role: 'alert', style: S.error }, state.error) : null
         ),
           dialogNode,
@@ -2102,6 +3088,12 @@ window.__ModuleLoader__.load({
         const store = createStore(ctx)
         const ticker = createLocaleTicker(ctx)
         const { Section, Layer } = createComponents(ctx, store, ticker)
+
+        const widgetController = createWidgetController(store)
+        ctx.effect(() => {
+          widgetController.start()
+          return () => widgetController.stop()
+        }, 'ui-background: widget')
 
         ctx.effect(() => {
           void store.load()

@@ -772,7 +772,7 @@ window.__ModuleLoader__.load({
         display: 'flex',
         flexDirection: hide ? 'row' : 'column',
         alignItems: hide ? 'center' : 'flex-start',
-        justifyContent: hide ? 'center' : 'flex-start',
+        justifyContent: 'center',
         gap: hide ? 0 : 3,
         textAlign: 'left',
         overflow: 'hidden',
@@ -782,7 +782,7 @@ window.__ModuleLoader__.load({
 
     function widgetLabelStyle(skin) {
       return {
-        fontSize: 10,
+        fontSize: 11,
         lineHeight: 1,
         letterSpacing: skin.labelSpacing || '0.16em',
         opacity: skin.labelOpacity === undefined ? 0.66 : skin.labelOpacity,
@@ -792,7 +792,7 @@ window.__ModuleLoader__.load({
     function widgetTimeStyle(skin, hide) {
       return {
         fontFamily: 'ui-monospace, "Cascadia Mono", Consolas, monospace',
-        fontSize: hide ? 16 : 21,
+        fontSize: hide ? 17 : 23,
         lineHeight: 1.04,
         fontWeight: skin.timeWeight || 500,
         color: skin.timeColor || undefined,

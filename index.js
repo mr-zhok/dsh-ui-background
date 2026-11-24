@@ -1,18 +1,23 @@
 /**
  * Host half of the UI background plugin.
  *
- * Owns a small content-addressed image library under `$DSH_HOME/ui-background/`:
+ * Owns a small content-addressed media library under `$DSH_HOME/ui-background/`:
  *
  *   ui-background/
- *   ├─ images/<sha256>.<ext>
+ *   ├─ images/<sha256>.<ext>   (png/jpg/webp/gif/mp4/webm)
  *   ├─ index.json          [{ id, mime, ext, size, addedAt, name }]
  *   └─ state.json          { enabled, mode, opacity, overlayOpacity, currentId, updatedAt }
  *
- * Uploads append to the library (deduplicated by content), up to 10 images;
+ * Uploads append to the library (deduplicated by content), up to 10 entries;
  * the background shows the selected `currentId`. A pre-1.3.0 single
  * `background.<ext>` is migrated into the library on first read.
+ *
+ * Still images and short videos share one library: images are capped at
+ * 12 MB, videos at 50 MB, and every entry carries a `kind` so the client
+ * knows whether to paint a CSS background or a <video> layer.
  */
 import { createHash } from 'node:crypto'
+import { createReadStream } from 'node:fs'
 import {
   existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync,
 } from 'node:fs'
@@ -21,6 +26,7 @@ import { join } from 'node:path'
 
 const PREFIX = '/ui-background'
 const MAX_IMAGE_BYTES = 12 * 1024 * 1024
+const MAX_VIDEO_BYTES = 50 * 1024 * 1024
 const MAX_JSON_BYTES = 8 * 1024
 const MAX_THUMB_BYTES = 2 * 1024 * 1024
 const MAX_ITEMS = 10
@@ -31,6 +37,8 @@ const MIME_EXT = {
   'image/jpeg': 'jpg',
   'image/webp': 'webp',
   'image/gif': 'gif',
+  'video/mp4': 'mp4',
+  'video/webm': 'webm',
 }
 const EXT_MIME = {
   png: 'image/png',
@@ -38,7 +46,10 @@ const EXT_MIME = {
   jpeg: 'image/jpeg',
   webp: 'image/webp',
   gif: 'image/gif',
+  mp4: 'video/mp4',
+  webm: 'video/webm',
 }
+const VIDEO_MIMES = new Set(['video/mp4', 'video/webm'])
 const ID_RE = /^[a-f0-9]{64}$/
 const DEFAULT_STATE = {
   enabled: true,
@@ -169,6 +180,15 @@ export function apply(ctx) {
     return createHash('sha256').update(bytes).digest('hex')
   }
 
+  /** `video` entries paint with a <video> element, `image` ones with CSS. */
+  function kindOf(mime) {
+    return VIDEO_MIMES.has(mime) ? 'video' : 'image'
+  }
+
+  function maxBytesFor(mime) {
+    return VIDEO_MIMES.has(mime) ? MAX_VIDEO_BYTES : MAX_IMAGE_BYTES
+  }
+
   function normalizeItem(entry) {
     if (!entry || typeof entry !== 'object') return null
     if (typeof entry.id !== 'string' || !ID_RE.test(entry.id)) return null
@@ -186,7 +206,7 @@ export function apply(ctx) {
       ? entry.addedAt
       : 0
     const name = typeof entry.name === 'string' ? entry.name.slice(0, 80) : ''
-    return { id: entry.id, mime, ext, size, addedAt, name }
+    return { id: entry.id, mime, ext, size, addedAt, name, kind: kindOf(mime) }
   }
 
   function readIndex() {
@@ -225,6 +245,7 @@ export function apply(ctx) {
         size: bytes.length,
         addedAt: Date.now(),
         name: 'background.' + ext,
+        kind: kindOf(mime),
       }
       writeJson(indexPath, [item])
       log('info', 'migrated the legacy background image into the library')
@@ -291,9 +312,11 @@ export function apply(ctx) {
       updatedAt: state.updatedAt,
       hasImage: current !== null,
       mime: current ? current.mime : null,
+      kind: current ? current.kind : null,
       items: items.map((item) => ({
         id: item.id,
         mime: item.mime,
+        kind: item.kind,
         size: item.size,
         addedAt: item.addedAt,
         name: item.name,
@@ -468,6 +491,7 @@ export function apply(ctx) {
         size: bytes.length,
         addedAt: previous ? previous.addedAt : Date.now(),
         name: previous ? previous.name : name,
+        kind: kindOf(mime),
       })
     }
 
@@ -531,20 +555,78 @@ export function apply(ctx) {
     return stateView(state, items, { rescan: report })
   }
 
-  function serveImage(response, item) {
+  function serveImage(response, item, request) {
     const file = imageFile(item.id, item.ext)
     if (!existsSync(file)) {
       sendJson(response, 404, { error: 'no background image' })
       return
     }
-    const data = readFileSync(file)
-    response.writeHead(200, {
-      // Content-addressed: the bytes behind an id never change.
+    let size
+    try {
+      size = statSync(file).size
+    } catch {
+      sendJson(response, 404, { error: 'no background image' })
+      return
+    }
+    // Content-addressed: the bytes behind an id never change.
+    const base = {
       'cache-control': 'public, max-age=31536000, immutable',
       'content-type': item.mime,
-      'content-length': data.length,
-    })
+      'accept-ranges': 'bytes',
+    }
+    // Videos need byte ranges: without them the <video> element can neither
+    // seek nor loop reliably, and some builds refuse to play at all.
+    const range = item.kind === 'video' ? parseRange(request, size) : null
+    if (range) {
+      if (range === 'invalid') {
+        response.writeHead(416, Object.assign({}, base, { 'content-range': 'bytes */' + size }))
+        response.end()
+        return
+      }
+      const length = range.end - range.start + 1
+      const stream = createReadStream(file, { start: range.start, end: range.end })
+      response.writeHead(206, Object.assign({}, base, {
+        'content-range': 'bytes ' + range.start + '-' + range.end + '/' + size,
+        'content-length': length,
+      }))
+      stream.on('error', () => {
+        try {
+          response.destroy()
+        } catch {
+          /* socket already gone */
+        }
+      })
+      stream.pipe(response)
+      return
+    }
+    const data = readFileSync(file)
+    response.writeHead(200, Object.assign({}, base, { 'content-length': data.length }))
     response.end(data)
+  }
+
+  /** `{start,end}` for a satisfiable single range, `'invalid'`, or null. */
+  function parseRange(request, size) {
+    const header = request.headers.range
+    if (typeof header !== 'string') return null
+    const match = /^bytes=(\d*)-(\d*)$/.exec(header.trim())
+    if (!match) return null
+    const [, rawStart, rawEnd] = match
+    if (rawStart === '' && rawEnd === '') return 'invalid'
+    let start
+    let end
+    if (rawStart === '') {
+      // Suffix range: the last N bytes.
+      const suffix = Number(rawEnd)
+      if (!Number.isFinite(suffix) || suffix <= 0) return 'invalid'
+      start = Math.max(0, size - suffix)
+      end = size - 1
+    } else {
+      start = Number(rawStart)
+      end = rawEnd === '' ? size - 1 : Number(rawEnd)
+    }
+    if (!Number.isFinite(start) || !Number.isFinite(end)) return 'invalid'
+    if (start > end || start >= size) return 'invalid'
+    return { start, end: Math.min(end, size - 1) }
   }
 
   /**
@@ -595,7 +677,7 @@ export function apply(ctx) {
         sendJson(response, 404, { error: 'no background image' })
         return
       }
-      serveImage(response, item)
+      serveImage(response, item, request)
       return
     }
 
@@ -641,7 +723,7 @@ export function apply(ctx) {
       // background (the client decides whether it should become current).
       const selectParam = String(url.searchParams.get('select') || '').toLowerCase()
       const select = selectParam !== '0' && selectParam !== 'false'
-      const bytes = await readBody(request, MAX_IMAGE_BYTES)
+      const bytes = await readBody(request, maxBytesFor(mime))
       if (bytes.length === 0) {
         sendJson(response, 400, { error: 'empty image' })
         return
@@ -684,6 +766,7 @@ export function apply(ctx) {
           size: bytes.length,
           addedAt: Date.now(),
           name: imageName(request.headers['x-image-name']),
+          kind: kindOf(mime),
         }
         const nextItems = items.concat(item)
         writeIndex(nextItems)
@@ -869,7 +952,7 @@ export function apply(ctx) {
   function onRequest(request, response) {
     Promise.resolve(handle(request, response)).catch((error) => {
       const status = typeof error?.status === 'number' ? error.status : 500
-      const message = status === 413 ? 'image too large' : status === 400 ? 'bad request' : 'internal error'
+      const message = status === 413 ? 'file too large' : status === 400 ? 'bad request' : 'internal error'
       if (!response.headersSent) {
         sendJson(response, status, { error: message })
       } else if (!response.writableEnded) {

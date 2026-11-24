@@ -18,41 +18,58 @@ window.__ModuleLoader__.load({
 
     const NS = 'ui-background'
     const MAX_BYTES = 12 * 1024 * 1024
+    const MAX_VIDEO_BYTES = 50 * 1024 * 1024
     const MAX_ITEMS = 10
     const UNDO_MS = 10 * 1000
     /** Cross-fade length when the background image changes (rotation/manual). */
     const CROSSFADE_MS = 480
-    const ACCEPT = 'image/png,image/jpeg,image/webp,image/gif'
+    const ACCEPT = 'image/png,image/jpeg,image/webp,image/gif,video/mp4,video/webm'
     const ALLOWED = new Set(['image/png', 'image/jpeg', 'image/webp', 'image/gif'])
+    const VIDEO_ALLOWED = new Set(['video/mp4', 'video/webm'])
+
+    /** Both sets together: everything the library accepts. */
+    function isVideoItem(item) {
+      return Boolean(item) && item.kind === 'video'
+    }
+
+    /** Upload size ceiling depends on the media kind. */
+    function maxBytesFor(type) {
+      return VIDEO_ALLOWED.has(type) ? MAX_VIDEO_BYTES : MAX_BYTES
+    }
+
+    function formatLimit(bytes) {
+      return Math.round(bytes / (1024 * 1024)) + ' MB'
+    }
 
     const ZH = {
       nav: 'UI设置',
       heading: '界面背景',
       intro: '上传图片作为界面背景（最多 10 张，可随时切换）：壁纸模式图片在界面下方、面板半透明；浮层模式图片盖在界面上方。设置保存在本机，重启后仍然生效。',
       imageTitle: '背景图',
-      imageHint: '支持 PNG、JPEG、WebP、GIF，单张不超过 12 MB。',
+      imageHint: '支持 PNG、JPEG、WebP、GIF（12 MB 以内）与 MP4、WebM 视频（50 MB 以内）。视频静音循环播放。',
       empty: '还没有图片',
-      add: '添加图片',
+      add: '添加图片/视频',
       refresh: '刷新图库',
-      refreshOk: '已刷新：共 {total} 张（新增 {added}，移除 {removed}）',
-      refreshOverflow: '超出 10 张上限，未纳入 {overflow} 张。',
+      refreshOk: '已刷新：共 {total} 项（新增 {added}，移除 {removed}）',
+      refreshOverflow: '超出 10 项上限，未纳入 {overflow} 项。',
       refreshFailed: '刷新失败，请重试。',
       remove: '删除',
-      deleteTitle: '删除这张图片？',
-      deleteBody: '删除后 10 秒内可以撤销；撤销会恢复图片和它在图库中的位置。',
-      deleteCurrentWarn: '这是当前背景，删除后会自动切换到其他图片。',
+      deleteTitle: '删除这一项？',
+      deleteBody: '删除后 10 秒内可以撤销；撤销会恢复文件和它在图库中的位置。',
+      deleteCurrentWarn: '这是当前背景，删除后会自动切换到其他项。',
       deleteCancel: '取消',
       deleteConfirm: '删除',
       deleteUndoToast: '已删除「{name}」',
       deleteUndoAction: '撤销',
-      deleteUndoFailed: '撤销失败，请重新添加图片。',
-      deleteUndoLimit: '撤销失败：图库已满 10 张。',
-      deleteNoUndo: '已删除「{name}」（原图过大或读取失败，无法撤销）。',
-      unnamed: '未命名图片',
-      galleryHint: '点击缩略图切换背景，右上角 × 删除；最多 10 张。',
-      limitReached: '最多保存 10 张图片，请先删除一张。',
-      uploadDuplicate: '这张图已在库里，已切换。',
+      deleteUndoFailed: '撤销失败，请重新添加。',
+      deleteUndoLimit: '撤销失败：图库已满 10 项。',
+      deleteNoUndo: '已删除「{name}」（原文件过大或读取失败，无法撤销）。',
+      unnamed: '未命名背景',
+      galleryHint: '点击缩略图切换背景，右上角 × 删除；最多 10 项。',
+      limitReached: '最多保存 10 项背景，请先删除一项。',
+      uploadDuplicate: '这一项已在库里，已切换。',
       uploadOk: '已添加并切换。',
+      videoBadge: '视频',
       modeTitle: '显示方式',
       modeHint: '壁纸：图片在界面下方、面板半透明；浮层：图片盖在界面上方、按浓度叠加。',
       modeWallpaper: '壁纸',
@@ -98,38 +115,40 @@ window.__ModuleLoader__.load({
       loadFailed: '读取背景设置失败，请刷新页面后重试。',
       saveFailed: '保存失败，请重试。',
       uploadFailed: '上传失败，请重试。',
-      tooLarge: '图片超过 12 MB，请换一张更小的图片。',
-      badType: '不支持的图片格式，请使用 PNG、JPEG、WebP 或 GIF。',
+      tooLarge: '图片超过 {limit}，请换一张更小的。',
+      tooLargeVideo: '视频超过 {limit}，请换一个更短的视频。',
+      badType: '不支持的格式，请使用 PNG、JPEG、WebP、GIF、MP4 或 WebM。',
     }
 
     const EN = {
       nav: 'UI Settings',
       heading: 'Interface background',
       intro: 'Upload images as the interface background (up to 10, switchable anytime): Wallpaper puts the image behind the interface with semi-transparent panels; Overlay paints it above the interface. The setting is stored on this machine and survives a restart.',
-      imageTitle: 'Background image',
-      imageHint: 'PNG, JPEG, WebP or GIF, up to 12 MB each.',
-      empty: 'No images yet',
-      add: 'Add image',
+      imageTitle: 'Background',
+      imageHint: 'PNG, JPEG, WebP or GIF up to 12 MB, plus MP4 or WebM video up to 50 MB. Videos play muted on a loop.',
+      empty: 'Nothing here yet',
+      add: 'Add image/video',
       refresh: 'Refresh',
-      refreshOk: 'Refreshed: {total} image(s), {added} added, {removed} removed',
-      refreshOverflow: '{overflow} image(s) beyond the 10-image limit were left out.',
+      refreshOk: 'Refreshed: {total} item(s), {added} added, {removed} removed',
+      refreshOverflow: '{overflow} item(s) beyond the 10-item limit were left out.',
       refreshFailed: 'Refresh failed. Please try again.',
       remove: 'Delete',
-      deleteTitle: 'Delete this image?',
-      deleteBody: 'You can undo for 10 seconds; undo restores the image and its place in the gallery.',
-      deleteCurrentWarn: 'This is the current background; another image will be selected after deleting it.',
+      deleteTitle: 'Delete this item?',
+      deleteBody: 'You can undo for 10 seconds; undo restores the file and its place in the gallery.',
+      deleteCurrentWarn: 'This is the current background; another item will be selected after deleting it.',
       deleteCancel: 'Cancel',
       deleteConfirm: 'Delete',
       deleteUndoToast: 'Deleted “{name}”',
       deleteUndoAction: 'Undo',
-      deleteUndoFailed: 'Undo failed. Please add the image again.',
-      deleteUndoLimit: 'Undo failed: the gallery is full (10 images).',
+      deleteUndoFailed: 'Undo failed. Please add it again.',
+      deleteUndoLimit: 'Undo failed: the gallery is full (10 items).',
       deleteNoUndo: 'Deleted “{name}” (the original could not be kept for undo).',
-      unnamed: 'Untitled image',
-      galleryHint: 'Click a thumbnail to switch, × to delete; up to 10 images.',
-      limitReached: 'Up to 10 images. Remove one first.',
-      uploadDuplicate: 'That image is already in the library and is now selected.',
-      uploadOk: 'Image added and selected.',
+      unnamed: 'Untitled background',
+      galleryHint: 'Click a thumbnail to switch, × to delete; up to 10 items.',
+      limitReached: 'Up to 10 backgrounds. Remove one first.',
+      uploadDuplicate: 'That item is already in the library and is now selected.',
+      uploadOk: 'Added and selected.',
+      videoBadge: 'Video',
       modeTitle: 'Display mode',
       modeHint: 'Wallpaper: the image sits behind the interface with semi-transparent panels. Overlay: the image covers the interface at the chosen strength.',
       modeWallpaper: 'Wallpaper',
@@ -175,8 +194,9 @@ window.__ModuleLoader__.load({
       loadFailed: 'Could not read the background settings. Refresh the page and try again.',
       saveFailed: 'Save failed. Please try again.',
       uploadFailed: 'Upload failed. Please try again.',
-      tooLarge: 'The image is larger than 12 MB. Choose a smaller one.',
-      badType: 'Unsupported image format. Use PNG, JPEG, WebP or GIF.',
+      tooLarge: 'The image is larger than {limit}. Choose a smaller one.',
+      tooLargeVideo: 'The video is larger than {limit}. Choose a shorter one.',
+      badType: 'Unsupported format. Use PNG, JPEG, WebP, GIF, MP4 or WebM.',
     }
 
     const S = {
@@ -268,6 +288,19 @@ window.__ModuleLoader__.load({
         userSelect: 'none',
       },
       thumbImg: { width: '100%', height: '100%', objectFit: 'cover', display: 'block' },
+      /** Small "video" chip on top of a poster frame. */
+      videoBadge: {
+        position: 'absolute',
+        left: 4,
+        bottom: 4,
+        padding: '1px 5px',
+        borderRadius: 4,
+        background: 'rgba(0, 0, 0, 0.62)',
+        color: '#fff',
+        fontSize: 10,
+        lineHeight: '14px',
+        pointerEvents: 'none',
+      },
       thumbRemove: {
         position: 'absolute',
         top: -5,
@@ -513,10 +546,122 @@ window.__ModuleLoader__.load({
         + CROSSFADE_CSS
     }
 
-    /** One fade layer: the previous image fading out over the new one. */
+    /**
+     * One fade layer: the previous image fading out over the new one.
+     */
     const CROSSFADE_CSS = '@keyframes ui-bg-crossfade{from{opacity:var(--ui-bg-fade-from,1)}to{opacity:0}}'
       + '.ui-bg-crossfade{animation:ui-bg-crossfade 480ms ease-out forwards}'
       + '@media (prefers-reduced-motion: reduce){.ui-bg-crossfade{animation:none;opacity:0}}'
+
+    /** Reduced-motion users keep the poster instead of moving pictures. */
+    function prefersReducedMotion() {
+      try {
+        return typeof window !== 'undefined'
+          && typeof window.matchMedia === 'function'
+          && window.matchMedia('(prefers-reduced-motion: reduce)').matches
+      } catch {
+        return false
+      }
+    }
+
+    /**
+     * The video background element. Playback is paused whenever the window is
+     * hidden or reduced motion is requested, which keeps a 4K wallpaper from
+     * burning the GPU while nobody is looking. `key` on the parent changes with
+     * the source, so a switch remounts the element and the fade replays.
+     */
+    function VideoLayer(props) {
+      const { useRef: useRefLocal, useEffect: useEffectLocal } = React
+      const ref = useRefLocal(null)
+
+      useEffectLocal(() => {
+        const video = ref.current
+        if (!video) return undefined
+        const sync = () => {
+          const hidden = typeof document !== 'undefined' && document.visibilityState === 'hidden'
+          if (hidden || prefersReducedMotion()) {
+            try {
+              video.pause()
+            } catch {
+              /* already paused */
+            }
+            return
+          }
+          const played = video.play()
+          if (played && typeof played.catch === 'function') {
+            // Autoplay can still be refused; the poster frame stays visible.
+            played.catch(() => undefined)
+          }
+        }
+        sync()
+        if (typeof document !== 'undefined') document.addEventListener('visibilitychange', sync)
+        return () => {
+          if (typeof document !== 'undefined') document.removeEventListener('visibilitychange', sync)
+          try {
+            video.pause()
+          } catch {
+            /* element already gone */
+          }
+        }
+      }, [props.src])
+
+      return h('div', { className: 'ui-bg-video', 'aria-hidden': 'true' },
+        h('video', {
+          ref,
+          key: props.src,
+          src: props.src,
+          muted: true,
+          loop: true,
+          autoPlay: true,
+          playsInline: true,
+          preload: 'auto',
+          disablePictureInPicture: true,
+          controls: false,
+          tabIndex: -1,
+          style: { opacity: props.opacity === undefined ? 1 : props.opacity },
+        })
+      )
+    }
+
+    /**
+     * Shared video styling: a full-viewport, click-through box that crops the
+     * video with `object-fit: cover` — the video equivalent of the image
+     * layer's `background-size: cover`.
+     */
+    const VIDEO_BASE_CSS = '.ui-bg-video{position:fixed;inset:0;pointer-events:none;overflow:hidden}'
+      + '.ui-bg-video video{width:100%;height:100%;object-fit:cover;display:block;'
+      + 'animation:ui-bg-video-in 480ms ease-out both}'
+      + '@keyframes ui-bg-video-in{from{opacity:0}to{opacity:1}}'
+      + '@media (prefers-reduced-motion: reduce){.ui-bg-video video{animation:none}}'
+
+    /**
+     * Video wallpaper: the document canvas goes transparent and the video sits
+     * at `z-index:-1`, behind the app like an image wallpaper. The dim value
+     * becomes a `::after` scrim rather than an opacity change, so the video
+     * keeps its colour and only darkens evenly.
+     */
+    function videoWallpaperCss(dim) {
+      const alpha = Math.max(0, Math.min(1, Number(dim) || 0))
+      return 'body{background-image:none !important;background-color:transparent !important}'
+        + '#root{background-image:none !important;background-color:transparent !important}'
+        + VIDEO_BASE_CSS
+        + '.ui-bg-video{z-index:-1}'
+        + '.ui-bg-video::after{content:"";position:absolute;inset:0;pointer-events:none;'
+        + 'background:rgba(0,0,0,' + alpha.toFixed(3) + ')}'
+    }
+
+    /**
+     * Video overlay: same element, but it paints above the interface like the
+     * image overlay does. Strength comes from the element opacity, matching the
+     * image path; `dim` stays wallpaper-only.
+     *
+     * No `z-index` is set on purpose: the image overlay has none either, so the
+     * slot's own order decides the stack. A huge z-index would cover dialogs
+     * and the work widget, which the image path never does.
+     */
+    function videoOverlayCss() {
+      return VIDEO_BASE_CSS
+    }
 
     const MODIFIER_CODES = new Set([
       'ControlLeft', 'ControlRight',
@@ -614,7 +759,9 @@ window.__ModuleLoader__.load({
       return Math.min(86400, Math.round(seconds))
     }
 
-    /** Downscale to a small WebP/JPEG thumbnail; null when unsupported. */
+    /**
+     * Downscale to a small WebP/JPEG thumbnail; null when unsupported.
+     */
     async function makeThumbnail(blob) {
       if (typeof document === 'undefined' || typeof createImageBitmap !== 'function') return null
       let bitmap = null
@@ -637,6 +784,64 @@ window.__ModuleLoader__.load({
         return null
       } finally {
         if (bitmap && typeof bitmap.close === 'function') bitmap.close()
+      }
+    }
+
+    /**
+     * Grab a poster frame from a video file. Seeking a hair past zero avoids
+     * the black first frame most encodes start with; a failed seek still
+     * resolves with whatever frame 0 looks like.
+     */
+    async function makeVideoPoster(blob) {
+      if (typeof document === 'undefined') return null
+      const url = URL.createObjectURL(blob)
+      const video = document.createElement('video')
+      video.preload = 'auto'
+      video.muted = true
+      video.playsInline = true
+      video.src = url
+      try {
+        await new Promise((resolve, reject) => {
+          const done = () => resolve()
+          const fail = () => reject(new Error('video metadata failed'))
+          video.addEventListener('loadeddata', done, { once: true })
+          video.addEventListener('error', fail, { once: true })
+          // Some containers never fire `loadeddata` while paused; the timeout
+          // keeps a broken file from stalling the upload.
+          setTimeout(fail, 8000)
+        })
+        const target = Math.min(0.1, (video.duration || 0) / 4)
+        if (target > 0 && Number.isFinite(video.duration)) {
+          await new Promise((resolve) => {
+            video.addEventListener('seeked', resolve, { once: true })
+            setTimeout(resolve, 3000)
+            video.currentTime = target
+          })
+        }
+        const width = video.videoWidth
+        const height = video.videoHeight
+        if (!width || !height) return null
+        const max = 320
+        const scale = Math.min(1, max / Math.max(width, height))
+        const canvas = document.createElement('canvas')
+        canvas.width = Math.max(1, Math.round(width * scale))
+        canvas.height = Math.max(1, Math.round(height * scale))
+        const context = canvas.getContext('2d')
+        if (!context) return null
+        context.drawImage(video, 0, 0, canvas.width, canvas.height)
+        const webp = await new Promise((resolve) => canvas.toBlob(resolve, 'image/webp', 0.82))
+        if (webp) return webp
+        return await new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.82))
+      } catch {
+        return null
+      } finally {
+        video.removeAttribute('src')
+        try {
+          video.load()
+        } catch {
+          /* already torn down */
+        }
+        URL.revokeObjectURL(url)
       }
     }
 
@@ -1255,6 +1460,8 @@ window.__ModuleLoader__.load({
         thumbs: {},
         fullId: null,
         fullUrl: null,
+        /** 'image' | 'video' | null — decides which layer paints. */
+        fullKind: null,
         fadeUrl: null,
         fadeKey: 0,
         updatedAt: 0,
@@ -1345,20 +1552,24 @@ window.__ModuleLoader__.load({
             }
           }
           // No stored thumbnail: download the original once, downscale it, and
-          // upload the small copy so later loads only fetch that.
+          // upload the small copy so later loads only fetch that. A video has
+          // no image to downscale, so it gets a poster frame instead.
           const response = await fetch(api('/ui-background/image') + '?id=' + encodeURIComponent(id), {
             credentials: 'same-origin',
           })
           if (!response.ok) return
           const full = await response.blob()
           if (!state.items.some((entry) => entry.id === id)) return
-          const small = await makeThumbnail(full)
+          const video = isVideoItem(item)
+          const small = video ? await makeVideoPoster(full) : await makeThumbnail(full)
           if (!state.items.some((entry) => entry.id === id)) return
           if (small) {
             thumbUrls[id] = URL.createObjectURL(small)
             set({ thumbs: Object.assign({}, thumbUrls) })
             void uploadThumb(id, small)
-          } else {
+          } else if (!video) {
+            // Last resort for images only: show the original itself. A video
+            // must never be handed to an <img>.
             thumbUrls[id] = URL.createObjectURL(full)
             set({ thumbs: Object.assign({}, thumbUrls) })
           }
@@ -1376,17 +1587,18 @@ window.__ModuleLoader__.load({
       /**
        * Keep the outgoing image alive for one cross-fade, then revoke it. A
        * newer change revokes the still-fading URL immediately and takes over
-       * the layer.
+       * the layer. Videos are never cross-faded: the previous video URL is a
+       * route URL that must not be revoked, and `ensureFull` skips this path.
        */
       function beginCrossfade(url) {
-        if (!url) return
+        if (!url || typeof url !== 'string' || url.indexOf('blob:') !== 0) return
         const stale = state.fadeUrl
-        if (stale && stale !== url) URL.revokeObjectURL(stale)
+        if (stale && stale !== url) revoke(stale)
         if (fadeTimer) clearTimeout(fadeTimer)
         fadeTimer = setTimeout(() => {
           fadeTimer = 0
           if (state.fadeUrl === url) set({ fadeUrl: null })
-          URL.revokeObjectURL(url)
+          revoke(url)
         }, CROSSFADE_MS + 160)
       }
 
@@ -1396,8 +1608,19 @@ window.__ModuleLoader__.load({
           fadeTimer = 0
         }
         if (state.fadeUrl) {
-          URL.revokeObjectURL(state.fadeUrl)
+          revoke(state.fadeUrl)
           set({ fadeUrl: null })
+        }
+      }
+
+      /** Only blob URLs can be revoked; HTTP URLs (videos) must be left alone. */
+      function revoke(url) {
+        if (typeof url === 'string' && url.indexOf('blob:') === 0) {
+          try {
+            URL.revokeObjectURL(url)
+          } catch {
+            /* already revoked */
+          }
         }
       }
 
@@ -1406,16 +1629,34 @@ window.__ModuleLoader__.load({
           // Cancel in-flight loads: the wanted background is now "none".
           fullSeq += 1
           clearCrossfade()
-          const previous = state.fullUrl
-          if (previous) URL.revokeObjectURL(previous)
-          set({ fullId: null, fullUrl: null, fadeUrl: null })
+          revoke(state.fullUrl)
+          set({ fullId: null, fullUrl: null, fullKind: null, fadeUrl: null })
           return
         }
-        if (state.fullId === id && state.fullUrl) {
-          // Already showing the wanted image. Invalidate older in-flight loads
+        const item = state.items.find((entry) => entry.id === id) || null
+        const wantVideo = isVideoItem(item)
+        if (state.fullId === id && state.fullUrl && (state.fullKind === 'video') === wantVideo) {
+          // Already showing the wanted item. Invalidate older in-flight loads
           // so a late response cannot replace it with another image (this is
           // what made "undo delete of a non-current image" hide the wallpaper).
           fullSeq += 1
+          return
+        }
+        if (wantVideo) {
+          // Video is served straight from the route: the browser can then
+          // stream and seek over byte ranges instead of holding a 50 MB blob
+          // in memory, and no object URL can be revoked under the element.
+          fullSeq += 1
+          const previous = state.fullUrl
+          if (previous && previous !== state.fadeUrl) revoke(previous)
+          clearCrossfade()
+          set({
+            fullId: id,
+            fullKind: 'video',
+            fullUrl: api('/ui-background/image') + '?id=' + encodeURIComponent(id),
+            fadeUrl: null,
+            fadeKey: state.fadeKey + 1,
+          })
           return
         }
         fullSeq += 1
@@ -1428,14 +1669,19 @@ window.__ModuleLoader__.load({
           const blob = await response.blob()
           if (sequence !== fullSeq) return
           const previous = state.fullUrl
+          const wasVideo = state.fullKind === 'video'
           const nextUrl = URL.createObjectURL(blob)
-          beginCrossfade(previous)
+          // A video cannot cross-fade through a CSS background-image layer, so
+          // it is simply replaced; the element itself fades in via CSS.
+          if (!wasVideo) beginCrossfade(previous)
           set({
             fullId: id,
+            fullKind: 'image',
             fullUrl: nextUrl,
-            fadeUrl: previous || null,
+            fadeUrl: wasVideo ? null : (previous || null),
             fadeKey: state.fadeKey + 1,
           })
+          if (wasVideo && previous) revoke(previous)
         } catch {
           /* the background stays hidden until the next load */
         }
@@ -1889,12 +2135,14 @@ window.__ModuleLoader__.load({
       async function upload(file) {
         if (!file) return
         const type = String(file.type || '').toLowerCase()
-        if (!ALLOWED.has(type)) {
+        const video = VIDEO_ALLOWED.has(type)
+        if (!ALLOWED.has(type) && !video) {
           set({ error: t('badType'), notice: null })
           return
         }
-        if (file.size > MAX_BYTES) {
-          set({ error: t('tooLarge'), notice: null })
+        const limit = maxBytesFor(type)
+        if (file.size > limit) {
+          set({ error: t(video ? 'tooLargeVideo' : 'tooLarge').replace('{limit}', formatLimit(limit)), notice: null })
           return
         }
         if (state.items.length >= MAX_ITEMS) {
@@ -1902,7 +2150,7 @@ window.__ModuleLoader__.load({
           return
         }
         set({ busy: true, error: null, notice: null })
-        const thumb = await makeThumbnail(file)
+        const thumb = video ? await makeVideoPoster(file) : await makeThumbnail(file)
         try {
           const view = await request('/ui-background/image', {
             method: 'POST',
@@ -1951,12 +2199,12 @@ window.__ModuleLoader__.load({
           clearTimeout(fadeTimer)
           fadeTimer = 0
         }
-        if (state.fullUrl) URL.revokeObjectURL(state.fullUrl)
-        if (state.fadeUrl && state.fadeUrl !== state.fullUrl) URL.revokeObjectURL(state.fadeUrl)
+        revoke(state.fullUrl)
+        if (state.fadeUrl && state.fadeUrl !== state.fullUrl) revoke(state.fadeUrl)
         for (const id of Object.keys(thumbUrls)) {
           const url = thumbUrls[id]
           delete thumbUrls[id]
-          if (url) URL.revokeObjectURL(url)
+          if (url) revoke(url)
         }
         listeners.clear()
       }
@@ -2240,9 +2488,17 @@ window.__ModuleLoader__.load({
         const [widgetLabelError, setWidgetLabelError] = React.useState(null)
         const widgetLabelEditing = React.useRef(false)
         const items = Array.isArray(state.items) ? state.items : []
+        const currentItem = state.currentId
+          ? (items.find((item) => item.id === state.currentId) || null)
+          : null
+        // The preview box is a CSS background, so only an image URL may land in
+        // it: a video falls back to its poster thumbnail (never its route URL).
         const currentUrl = state.currentId
-          ? (state.thumbs[state.currentId] || (state.fullId === state.currentId ? state.fullUrl : '') || '')
+          ? (state.thumbs[state.currentId]
+            || (state.fullId === state.currentId && state.fullKind !== 'video' ? state.fullUrl : '')
+            || '')
           : ''
+        const currentIsVideo = isVideoItem(currentItem)
         const hasCurrent = Boolean(state.currentId)
         const atLimit = items.length >= MAX_ITEMS
         const disabledStyle = state.busy ? { opacity: 0.6, cursor: 'default' } : null
@@ -2597,10 +2853,22 @@ window.__ModuleLoader__.load({
               h('div', {
                 role: 'img',
                 'aria-label': t('imageTitle'),
-                style: currentUrl
-                  ? Object.assign({}, S.preview, { backgroundImage: 'url("' + currentUrl + '")' })
-                  : S.emptyBox,
-              }, currentUrl ? null : (items.length > 0 ? t('loading') : t('empty'))),
+                style: {
+                  position: 'relative',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: 12,
+                  color: 'var(--dsw-alias-label-secondary)',
+                },
+              },
+                h('div', {
+                  style: Object.assign({}, currentUrl
+                    ? Object.assign({}, S.preview, { backgroundImage: 'url("' + currentUrl + '")' })
+                    : S.emptyBox),
+                }, currentUrl ? null : (items.length > 0 ? t('loading') : t('empty'))),
+                currentIsVideo ? h('span', { style: S.videoBadge }, t('videoBadge')) : null
+              ),
               h('div', { style: { display: 'flex', flexDirection: 'column', gap: 8, alignItems: 'flex-start' } },
                 h('button', {
                   type: 'button',
@@ -2655,6 +2923,7 @@ window.__ModuleLoader__.load({
                           cursor: 'grab',
                         }),
                       }, thumb ? h('img', { src: thumb, alt: '', draggable: false, style: S.thumbImg }) : null),
+                      isVideoItem(item) ? h('span', { style: S.videoBadge, 'aria-hidden': 'true' }, t('videoBadge')) : null,
                       h('button', {
                         type: 'button',
                         draggable: false,
@@ -2976,11 +3245,13 @@ window.__ModuleLoader__.load({
       }
 
       /**
-       * Two render paths share one image:
-       *  - wallpaper: the image paints on `body,#root` behind the app, and the
+       * Two render paths share one item:
+       *  - wallpaper: the item paints on `body,#root` behind the app, and the
        *    surface tokens turn translucent so it shows through the panels;
        *  - overlay: a fixed, click-through div above the interface.
-       * The effect must run before the early return: hooks cannot be skipped.
+       * Videos cannot ride CSS `background-image`, so both paths drop a real
+       * <video> element instead. The effect must run before the early return:
+       * hooks cannot be skipped.
        */
       function Layer() {
         const state = useStore()
@@ -2990,6 +3261,7 @@ window.__ModuleLoader__.load({
         // layer then blends old into new.
         const imageUrl = state.fullUrl
         const fadeUrl = state.fadeUrl
+        const isVideo = state.fullKind === 'video'
         const amount = wallpaper ? state.opacity : state.overlayOpacity
         const active = state.ready && state.enabled && Boolean(imageUrl) && amount > 0
         const throttled = useThrottled(amount, 80)
@@ -3017,12 +3289,19 @@ window.__ModuleLoader__.load({
         if (!active) return null
         if (wallpaper) {
           return h(React.Fragment, null,
-            h('style', {
+            isVideo ? h('style', {
+              key: 'wallpaper-video',
+              'data-ui-background': 'wallpaper-video',
+              // The canvas keeps the glass tokens working: a transparent
+              // document background lets the fixed <video> show through.
+              dangerouslySetInnerHTML: { __html: videoWallpaperCss(state.dim) },
+            }) : h('style', {
               key: 'wallpaper',
               'data-ui-background': 'wallpaper',
               dangerouslySetInnerHTML: { __html: wallpaperCss(imageUrl, state.dim) },
             }),
-            fadeUrl ? inBody(h('div', {
+            isVideo ? inBody(h(VideoLayer, { key: 'video-' + state.fadeKey, src: imageUrl, opacity: 1 })) : null,
+            !isVideo && fadeUrl ? inBody(h('div', {
               key: 'crossfade-' + state.fadeKey,
               'aria-hidden': 'true',
               className: 'ui-bg-crossfade',
@@ -3042,9 +3321,9 @@ window.__ModuleLoader__.load({
         return h(React.Fragment, null,
           h('style', {
             key: 'crossfade-css',
-            dangerouslySetInnerHTML: { __html: CROSSFADE_CSS },
+            dangerouslySetInnerHTML: { __html: isVideo ? videoOverlayCss() : CROSSFADE_CSS },
           }),
-          h('div', {
+          isVideo ? null : h('div', {
             key: 'overlay',
             'aria-hidden': 'true',
             style: {
@@ -3059,7 +3338,8 @@ window.__ModuleLoader__.load({
               transition: 'opacity 160ms ease',
             },
           }),
-          fadeUrl ? h('div', {
+          isVideo ? h(VideoLayer, { key: 'video-' + state.fadeKey, src: imageUrl, opacity: state.overlayOpacity }) : null,
+          !isVideo && fadeUrl ? h('div', {
             key: 'crossfade-' + state.fadeKey,
             'aria-hidden': 'true',
             className: 'ui-bg-crossfade',
